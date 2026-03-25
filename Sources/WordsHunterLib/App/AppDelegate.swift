@@ -8,6 +8,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Hold references to all active bubbles
     private var activeBubbles: [BubbleWindow] = []
+    private var isMonitoring = false
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityIfNeeded()
@@ -33,6 +34,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startEventMonitor() {
+        guard !isMonitoring else { return }
+        isMonitoring = true
         eventMonitor.onWordCaptured = { [weak self] word in
             self?.handleCapturedWord(word)
         }

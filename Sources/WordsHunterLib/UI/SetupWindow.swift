@@ -262,6 +262,10 @@ final class SetupViewController: NSViewController {
     private func loadCurrentSettings() {
         let s = AppSettings.shared
         if !s.vaultPath.isEmpty { vaultPathField.stringValue = s.vaultPath }
+        // Re-opening from Preferences after initial setup: use a friendlier button label
+        if s.isSetupComplete {
+            startBtn.title = "Save Settings"
+        }
         wordFolderField.stringValue = s.wordFolder
         useWordFolderToggle.state = s.useWordFolder ? .on : .off
         lookupEnabledToggle.state = s.lookupEnabled ? .on : .off
