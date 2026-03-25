@@ -1,5 +1,8 @@
 import AppKit
 
+private let apiKeyTrimSet = CharacterSet.whitespacesAndNewlines
+    .union(CharacterSet(charactersIn: "\"'`"))
+
 protocol SetupWindowDelegate: AnyObject {
     func setupDidComplete()
 }
@@ -50,7 +53,7 @@ final class SetupViewController: NSViewController {
         return f
     }()
 
-    private let useWordFolderToggle = NSButton(checkboxWithTitle: "Save in a subfolder", target: nil, action: nil)
+    private let useWordFolderToggle = NSButton(checkboxWithTitle: "Save captured words in a subfolder in the vault", target: nil, action: nil)
 
     private let wordFolderField: NSTextField = {
         let f = NSTextField()
@@ -61,8 +64,8 @@ final class SetupViewController: NSViewController {
 
     private let lookupEnabledToggle = NSButton(checkboxWithTitle: "Enable auto-lookup", target: nil, action: nil)
 
-    private let mwApiKeyField: NSSecureTextField = {
-        let f = NSSecureTextField()
+    private let mwApiKeyField: NSTextField = {
+        let f = NSTextField()
         f.placeholderString = "Paste your Merriam-Webster key here"
         f.bezelStyle = .roundedBezel
         return f
@@ -143,10 +146,9 @@ final class SetupViewController: NSViewController {
         let boxWidth: CGFloat = 440   // fixed reference width — box fills this
 
         // ── Intro label ──
-        let introLabel = NSTextField(labelWithString:
+        let introLabel = NSTextField(wrappingLabelWithString:
             "Words Hunter captures vocabulary words from any app while you read or code.")
         introLabel.font = NSFont.boldSystemFont(ofSize: 13)
-        introLabel.maximumNumberOfLines = 0
         introLabel.preferredMaxLayoutWidth = boxWidth
 
         // ── Vault box ──
@@ -242,11 +244,7 @@ final class SetupViewController: NSViewController {
 
     private func updateLookupState() {
         let on = lookupEnabledToggle.state == .on
-        mwApiKeyField.isEnabled = on
-        retriesStepper.isEnabled = on
-        retriesValueLabel.isEnabled = on
         linkButton.isEnabled = on
-        if on { mwApiKeyField.window?.makeFirstResponder(mwApiKeyField) }
     }
 
     // MARK: - Actions
@@ -272,7 +270,7 @@ final class SetupViewController: NSViewController {
     }
 
     @objc private func openApiKeyLink() {
-        NSWorkspace.shared.open(URL(string: "https://dictionaryapi.com/register")!)
+        NSWorkspace.shared.open(URL(string: "https://dictionaryapi.com/register/index.htm")!)
     }
 
     @objc private func startHunting() {
@@ -291,7 +289,7 @@ final class SetupViewController: NSViewController {
         s.wordFolder = wordFolderField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty ? "Words" : wordFolderField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         s.lookupEnabled = lookupEnabledToggle.state == .on
-        s.mwApiKey = mwApiKeyField.stringValue
+        s.mwApiKey = mwApiKeyField.stringValue.trimmingCharacters(in: apiKeyTrimSet)
         s.lookupRetries = Int(retriesStepper.intValue)
         s.isSetupComplete = true
 
@@ -311,13 +309,13 @@ final class SetupViewController: NSViewController {
     private func makeBox(title: String, rows: [NSView], width: CGFloat) -> NSBox {
         let box = NSBox()
         box.boxType = .primary
-        box.titlePosition = .atTop
-        box.title = title
-        box.titleFont = NSFont.boldSystemFont(ofSize: 11)
-        box.contentViewMargins = NSSize(width: 12, height: 8)
+        box.titlePosition = .noTitle
+        box.contentViewMargins = NSSize(width: 12, height: 10)
 
-        // Stack the rows inside the box's built-in contentView
-        let innerStack = NSStackView(views: rows)
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = NSFont.boldSystemFont(ofSize: 11)
+
+        let innerStack = NSStackView(views: [titleLabel] + rows)
         innerStack.orientation = .vertical
         innerStack.alignment = .leading
         innerStack.spacing = 8
@@ -332,7 +330,6 @@ final class SetupViewController: NSViewController {
             innerStack.bottomAnchor.constraint(equalTo: cv.bottomAnchor)
         ])
 
-        // Give the box a defined width so the outer stack can measure it
         NSLayoutConstraint.activate([
             box.widthAnchor.constraint(equalToConstant: width)
         ])
@@ -360,3 +357,4 @@ final class SetupViewController: NSViewController {
         return v
     }
 }
+
