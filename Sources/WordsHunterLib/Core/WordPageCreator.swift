@@ -9,14 +9,12 @@ enum PageCreationResult {
 struct WordPageCreator {
     static func createPage(for word: String) -> PageCreationResult {
         let settings = AppSettings.shared
-        guard !settings.vaultPath.isEmpty else {
-            return .error(message: "Vault path not configured")
-        }
 
         // Capitalize first letter, preserve remaining case (e.g. "API" stays "API")
         let filename = word.prefix(1).uppercased() + word.dropFirst()
-        let folderURL = URL(fileURLWithPath: settings.vaultPath)
-            .appendingPathComponent(settings.wordFolder)
+        guard let folderURL = settings.wordsFolderURL else {
+            return .error(message: "Vault path not configured")
+        }
         let fileURL = folderURL.appendingPathComponent("\(filename).md")
 
         // Skip silently if file already exists

@@ -1,4 +1,5 @@
 import AppKit
+import WordsHunterLib
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

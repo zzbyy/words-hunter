@@ -1,7 +1,7 @@
 import AppKit
 import UserNotifications
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusBar = StatusBarController()
     private let eventMonitor = EventMonitor()
     private var setupWindowController: SetupWindowController?
@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Hold references to all active bubbles
     private var activeBubbles: [BubbleWindow] = []
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityIfNeeded()
         statusBar.setup()
         statusBar.onOpenVault = { [weak self] in self?.openVaultFolder() }
@@ -20,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             showSetupWindow()
         }
+    }
+
+    public func applicationWillTerminate(_ notification: Notification) {
+        DictionaryService.shared.cancelAll()
     }
 
     private func requestAccessibilityIfNeeded() {
@@ -38,8 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleCapturedWord(_ word: String) {
         let result = WordPageCreator.createPage(for: word)
         switch result {
-        case .created:
+        case .created(let path):
             showBubble(for: word)
+            let settings = AppSettings.shared
+            if settings.lookupEnabled && !settings.mwApiKey.isEmpty {
+                DictionaryService.shared.startLookup(word: word, at: path)
+            }
         case .skipped:
             break // already exists, silent
         case .error(let message):
@@ -99,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: SetupWindowDelegate {
-    func setupDidComplete() {
+    public func setupDidComplete() {
         setupWindowController = nil
         startEventMonitor()
     }
