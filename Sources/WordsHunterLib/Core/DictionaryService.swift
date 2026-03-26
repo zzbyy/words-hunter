@@ -11,7 +11,10 @@ extension URLSession: URLSessionProtocol {}
 // MARK: - DictionaryContent
 
 struct DictionaryContent {
-    let definitions: [String]
+    let definitions: [String]       // shortdef[0] from first entry
+    let examples: [String]          // verbal illustrations from def.sseq.sense.dt.vis
+    let pos: String?                // functional label from `fl` field
+    let pronunciation: String?      // MW phonetic notation from `hwi.prs[0].mw`
     let source: String
 }
 
@@ -40,7 +43,7 @@ final class DictionaryService {
         self.session = session
     }
 
-    /// Start a background lookup for `word`, writing results to the file at `path`.
+    /// Start a background lookup for `word` (lemma), writing results to the file at `path`.
     func startLookup(word: String, at path: String) {
         let settings = AppSettings.shared
         guard settings.lookupEnabled, !settings.mwApiKey.isEmpty else { return }
@@ -58,7 +61,7 @@ final class DictionaryService {
                 if let content = try await fetchWithRetries(
                     word: word, apiKey: apiKey, retries: retries, session: session
                 ) {
-                    try WordPageUpdater.updateDefinition(at: path, with: content)
+                    try WordPageUpdater.update(at: path, with: content, lemma: word)
                 }
             } catch is CancellationError {
                 // Task was cancelled — normal, no action needed
@@ -147,8 +150,9 @@ final class DictionaryService {
 
     /// Parse MW API response.
     /// MW returns an array: if items are Dicts → definitions found; if items are Strings → word not found.
-    /// Take first 2 entries × first shortdef each.
-    private func parseMWResponse(data: Data) throws -> DictionaryContent? {
+    /// Extracts: shortdef[0] as definition, fl as pos, hwi.prs[0].mw as pronunciation,
+    /// def.sseq.sense.dt.vis entries as examples (MW format codes stripped).
+    internal func parseMWResponse(data: Data) throws -> DictionaryContent? {
         let json = try JSONSerialization.jsonObject(with: data)
         guard let array = json as? [Any], !array.isEmpty else { return nil }
 
@@ -156,17 +160,69 @@ final class DictionaryService {
         if array.first is String { return nil }
 
         guard let entries = array as? [[String: Any]] else { return nil }
+        guard let firstEntry = entries.first else { return nil }
 
-        var definitions: [String] = []
-        for entry in entries.prefix(2) {
-            if let shortdefs = entry["shortdef"] as? [String],
-               let first = shortdefs.first {
-                definitions.append(first)
+        // Definition: shortdef[0] from first entry
+        guard let shortdefs = firstEntry["shortdef"] as? [String],
+              let definition = shortdefs.first, !definition.isEmpty else { return nil }
+
+        // POS: fl field from first entry
+        let pos = firstEntry["fl"] as? String
+
+        // Pronunciation: hwi.prs[0].mw from first entry
+        let pronunciation: String?
+        if let hwi = firstEntry["hwi"] as? [String: Any],
+           let prs = hwi["prs"] as? [[String: Any]],
+           let firstPr = prs.first,
+           let mw = firstPr["mw"] as? String {
+            pronunciation = mw
+        } else {
+            pronunciation = nil
+        }
+
+        // Examples: collect vis entries from def.sseq.sense.dt across all entries, strip format codes
+        var examples: [String] = []
+        for entry in entries {
+            guard let defArray = entry["def"] as? [[String: Any]] else { continue }
+            for defItem in defArray {
+                guard let sseq = defItem["sseq"] as? [[[Any]]] else { continue }
+                for sseqGroup in sseq {
+                    for senseItem in sseqGroup {
+                        guard senseItem.count >= 2,
+                              let senseType = senseItem[0] as? String, senseType == "sense",
+                              let senseData = senseItem[1] as? [String: Any],
+                              let dt = senseData["dt"] as? [[Any]] else { continue }
+                        for dtItem in dt {
+                            guard dtItem.count >= 2,
+                                  let dtType = dtItem[0] as? String, dtType == "vis",
+                                  let visArray = dtItem[1] as? [[String: Any]] else { continue }
+                            for visEntry in visArray {
+                                if let t = visEntry["t"] as? String {
+                                    examples.append(stripMWFormatCodes(t))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        guard !definitions.isEmpty else { return nil }
-        return DictionaryContent(definitions: definitions, source: "Merriam-Webster")
+        return DictionaryContent(
+            definitions: [definition],
+            examples: examples,
+            pos: pos,
+            pronunciation: pronunciation,
+            source: "Merriam-Webster"
+        )
+    }
+
+    // MARK: - Helpers
+
+    /// Strips MW inline format codes such as {it}, {/it}, {bc}, {ldquo}, {rdquo}, etc.
+    private func stripMWFormatCodes(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "\\{[^}]+\\}") else { return text }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
     }
 }
 

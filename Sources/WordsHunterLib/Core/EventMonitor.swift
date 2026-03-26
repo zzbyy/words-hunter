@@ -4,7 +4,7 @@ import CoreGraphics
 final class EventMonitor {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    var onWordCaptured: ((String) -> Void)?
+    var onWordCaptured: (((word: String, lemma: String)) -> Void)?
 
     func start() {
         guard AXIsProcessTrusted() else {
@@ -64,9 +64,9 @@ final class EventMonitor {
         // Dispatch word capture after a brief delay for selection to settle
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
-            TextCapture.captureSelectedText { word in
-                guard let word else { return }
-                self.onWordCaptured?(word)
+            TextCapture.captureSelectedText { captured in
+                guard let captured else { return }
+                self.onWordCaptured?(captured)
             }
         }
     }
