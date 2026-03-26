@@ -87,7 +87,13 @@ final class AppSettingsTests: XCTestCase {
 
 final class DictionaryServiceJSONTests: XCTestCase {
 
-    // We test the JSON parsing logic by probing DictionaryService via a mock URLSession.
+    // All tests call the real parseMWResponse method via @testable import
+
+    private func callParseMWResponse(_ data: Data) throws -> DictionaryContent? {
+        return try DictionaryService().parseMWResponse(data: data)
+    }
+
+    // MARK: Definitions
 
     func testParsing_happyPath_returnsTwoDefinitions() throws {
         let json = """
@@ -125,28 +131,163 @@ final class DictionaryServiceJSONTests: XCTestCase {
         XCTAssertNil(content)
     }
 
-    // Access the private parseMWResponse via a test-only subclass
-    private func callParseMWResponse(_ data: Data) throws -> DictionaryContent? {
-        return try DictionaryServiceTestable.callParseResponse(data: data)
+    // MARK: POS
+
+    func testParsing_extractsPOS_fromFirstEntry() throws {
+        let json = """
+        [
+          {"fl": "verb", "shortdef": ["to make or become more secure"]},
+          {"fl": "noun", "shortdef": ["the act of consolidating"]}
+        ]
+        """.data(using: .utf8)!
+
+        let content = try callParseMWResponse(json)
+        XCTAssertEqual(content?.partOfSpeech, "verb",
+                       "POS should be taken from first entry's fl field")
+    }
+
+    func testParsing_missingPOS_returnsNilField() throws {
+        let json = """
+        [
+          {"shortdef": ["to make or become more secure"]}
+        ]
+        """.data(using: .utf8)!
+
+        let content = try callParseMWResponse(json)
+        XCTAssertNil(content?.partOfSpeech,
+                     "Missing fl field should yield nil partOfSpeech")
+    }
+
+    // MARK: Pronunciation
+
+    func testParsing_extractsPronunciation_hwi() throws {
+        let json = """
+        [
+          {
+            "fl": "verb",
+            "hwi": {"hw": "con*sol*i*date", "prs": [{"mw": "kən-ˈsä-lə-ˌdāt"}]},
+            "shortdef": ["to make or become more secure"]
+          }
+        ]
+        """.data(using: .utf8)!
+
+        let content = try callParseMWResponse(json)
+        XCTAssertEqual(content?.pronunciation, "kən-ˈsä-lə-ˌdāt")
+    }
+
+    func testParsing_missingPronunciation_returnsNilField() throws {
+        let json = """
+        [
+          {"fl": "verb", "shortdef": ["to make or become more secure"]}
+        ]
+        """.data(using: .utf8)!
+
+        let content = try callParseMWResponse(json)
+        XCTAssertNil(content?.pronunciation,
+                     "Missing hwi/prs should yield nil pronunciation")
     }
 }
 
-/// Test-only helper that exposes the private parsing method
-final class DictionaryServiceTestable {
-    static func callParseResponse(data: Data) throws -> DictionaryContent? {
-        // Re-implement the parsing inline so we can test it without network calls
-        let json = try JSONSerialization.jsonObject(with: data)
-        guard let array = json as? [Any], !array.isEmpty else { return nil }
-        if array.first is String { return nil }
-        guard let entries = array as? [[String: Any]] else { return nil }
-        var definitions: [String] = []
-        for entry in entries.prefix(2) {
-            if let shortdefs = entry["shortdef"] as? [String], let first = shortdefs.first {
-                definitions.append(first)
-            }
-        }
-        guard !definitions.isEmpty else { return nil }
-        return DictionaryContent(definitions: definitions, source: "Merriam-Webster")
+// MARK: - TextCapture Lemmatization Tests
+
+final class TextCaptureTests: XCTestCase {
+
+    func testLemmatize_regularVerb() {
+        // "consolidates" should lemmatize to "Consolidate"
+        let result = TextCapture.lemmatize("consolidates")
+        XCTAssertEqual(result, "Consolidate")
+    }
+
+    func testLemmatize_irregularVerb() {
+        // "has" should lemmatize to "Have"
+        let result = TextCapture.lemmatize("has")
+        XCTAssertEqual(result, "Have")
+    }
+
+    func testLemmatize_alreadyBaseForm() {
+        // "run" in base form should stay "Run"
+        let result = TextCapture.lemmatize("run")
+        XCTAssertEqual(result, "Run")
+    }
+
+    func testLemmatize_unknownWord_fallback() {
+        // "API" — NLTagger returns nil for acronyms → fallback to original casing
+        let result = TextCapture.lemmatize("API")
+        XCTAssertEqual(result, "API",
+                       "Unknown/acronym words should preserve original casing")
+    }
+}
+
+// MARK: - Vault Scan Tests
+
+final class VaultScanTests: XCTestCase {
+
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func createPage(_ name: String) {
+        let url = tempDir.appendingPathComponent("\(name).md")
+        try? "".write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func testVaultScan_matchesWordInDefinition() {
+        createPage("Strengthen")
+        let definitions = ["to make stronger or more powerful; to strengthen bonds"]
+        let result = DictionaryService.vaultScanRelatedWords(
+            word: "Consolidate", definitions: definitions, folderURL: tempDir
+        )
+        XCTAssertEqual(result, ["Strengthen"])
+    }
+
+    func testVaultScan_excludesSelf() {
+        createPage("Consolidate")
+        createPage("Strengthen")
+        let definitions = ["to consolidate power; to strengthen bonds"]
+        let result = DictionaryService.vaultScanRelatedWords(
+            word: "Consolidate", definitions: definitions, folderURL: tempDir
+        )
+        // "Consolidate" (self) must be excluded; "Strengthen" should appear
+        XCTAssertFalse(result.contains("Consolidate"), "Self must be excluded from related words")
+        XCTAssertTrue(result.contains("Strengthen"))
+    }
+
+    func testVaultScan_filtersShortWords_lessThan4Chars() {
+        createPage("Run")   // 3 chars — must be filtered
+        createPage("Give")  // 4 chars — should match if in definition
+        let definitions = ["to run quickly; to give power"]
+        let result = DictionaryService.vaultScanRelatedWords(
+            word: "Consolidate", definitions: definitions, folderURL: tempDir
+        )
+        XCTAssertFalse(result.contains("Run"), "Words shorter than 4 chars must be filtered")
+        XCTAssertTrue(result.contains("Give"), "4-char words should be included")
+    }
+
+    func testVaultScan_emptyVault_returnsEmpty() {
+        let result = DictionaryService.vaultScanRelatedWords(
+            word: "Consolidate", definitions: ["any definition"], folderURL: tempDir
+        )
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    func testVaultScan_noMatches_returnsEmpty() {
+        createPage("Ephemeral")
+        // Definition doesn't contain "ephemeral"
+        let definitions = ["to make secure and stable"]
+        let result = DictionaryService.vaultScanRelatedWords(
+            word: "Consolidate", definitions: definitions, folderURL: tempDir
+        )
+        XCTAssertTrue(result.isEmpty)
     }
 }
 
@@ -174,11 +315,22 @@ final class WordPageUpdaterTests: XCTestCase {
         return url
     }
 
-    private func content(definitions: [String]) -> DictionaryContent {
-        DictionaryContent(definitions: definitions, source: "Merriam-Webster")
+    private func content(
+        definitions: [String],
+        partOfSpeech: String? = nil,
+        pronunciation: String? = nil,
+        relatedWords: [String] = []
+    ) -> DictionaryContent {
+        DictionaryContent(
+            definitions: definitions,
+            source: "Merriam-Webster",
+            partOfSpeech: partOfSpeech,
+            pronunciation: pronunciation,
+            relatedWords: relatedWords
+        )
     }
 
-    // MARK: Happy path
+    // MARK: Existing tests (unchanged behavior via updateDefinition alias)
 
     func testUpdate_templateBody_writesDefinitions() throws {
         let template = """
@@ -200,8 +352,6 @@ final class WordPageUpdaterTests: XCTestCase {
         XCTAssertTrue(updated.contains("1. lasting a very short time"))
     }
 
-    // MARK: Safety: user already edited
-
     func testUpdate_userEditedDefinition_abortsWithoutChanging() throws {
         let edited = """
         # Ephemeral
@@ -221,8 +371,6 @@ final class WordPageUpdaterTests: XCTestCase {
         XCTAssertFalse(after.contains("new definition"))
     }
 
-    // MARK: Safety: file deleted between createPage and updateDefinition
-
     func testUpdate_fileDeleted_abortsWithoutThrowing() {
         let missingPath = tempDir.appendingPathComponent("DoesNotExist.md").path
         XCTAssertNoThrow(
@@ -233,14 +381,137 @@ final class WordPageUpdaterTests: XCTestCase {
         )
     }
 
-    // MARK: Whitespace-only body (blank lines, trailing newline)
-
     func testUpdate_whitespaceyBody_isStillConsideredEmpty() throws {
         let template = "## Definition\n\n\n\n## Examples\n\n"
         let url = writeFile(name: "Test.md", content: template)
         try WordPageUpdater.updateDefinition(at: url.path, with: content(definitions: ["value"]))
         let after = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(after.contains("1. value"))
+    }
+
+    // MARK: POS replacement
+
+    func testUpdatePage_writesPOS_whenPlaceholderPresent() throws {
+        let template = "# Consolidate\n\n> 📅 2026-03-26 | {POS} | {register/domain}\n\n## Definition\n\n\n"
+        let url = writeFile(name: "Consolidate.md", content: template)
+        try WordPageUpdater.updatePage(at: url.path, with: content(definitions: ["to make secure"], partOfSpeech: "verb"))
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.contains("| verb |"), "POS should replace {POS} placeholder")
+        XCTAssertFalse(after.contains("{POS}"), "{POS} literal should be gone after update")
+    }
+
+    func testUpdatePage_skipsPOS_whenAlreadyEdited() throws {
+        // User manually replaced {POS} with "noun" already
+        let template = "# Consolidate\n\n> 📅 2026-03-26 | noun | {register/domain}\n\n## Definition\n\n\n"
+        let url = writeFile(name: "Consolidate.md", content: template)
+        try WordPageUpdater.updatePage(at: url.path, with: content(definitions: ["to make secure"], partOfSpeech: "verb"))
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.contains("| noun |"), "User-edited POS must not be overwritten")
+    }
+
+    // MARK: Pronunciation
+
+    func testUpdatePage_writesPronunciation_whenEmpty() throws {
+        let template = "# Consolidate\n\n## Pronunciation\n\n\n## Definition\n\n\n"
+        let url = writeFile(name: "Consolidate.md", content: template)
+        try WordPageUpdater.updatePage(
+            at: url.path,
+            with: content(definitions: ["to make secure"], pronunciation: "kən-ˈsä-lə-ˌdāt")
+        )
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.contains("kən-ˈsä-lə-ˌdāt"))
+    }
+
+    func testUpdatePage_skipsPronunciation_whenUserEdited() throws {
+        let template = "# Consolidate\n\n## Pronunciation\n\nkən-ˈSÄ-lə-ˌdāt (my edit)\n\n## Definition\n\n\n"
+        let url = writeFile(name: "Consolidate.md", content: template)
+        try WordPageUpdater.updatePage(
+            at: url.path,
+            with: content(definitions: ["to make secure"], pronunciation: "kən-ˈsä-lə-ˌdāt")
+        )
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.contains("my edit"), "User-edited pronunciation must not be overwritten")
+    }
+
+    // MARK: Related Words
+
+    func testUpdatePage_writesRelatedWords_whenEmpty() throws {
+        let template = "# Consolidate\n\n## Definition\n\n\n## Related Words\n\n\n## Word Family\n\n"
+        let url = writeFile(name: "Consolidate.md", content: template)
+        try WordPageUpdater.updatePage(
+            at: url.path,
+            with: content(definitions: ["to make secure"], relatedWords: ["Strengthen", "Unify"])
+        )
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.contains("[[Strengthen]]"))
+        XCTAssertTrue(after.contains("[[Unify]]"))
+    }
+
+    func testUpdatePage_skipsRelatedWords_whenUserEdited() throws {
+        let template = "# Consolidate\n\n## Definition\n\n\n## Related Words\n\n[[Merge]] [[Integrate]]\n\n## Word Family\n\n"
+        let url = writeFile(name: "Consolidate.md", content: template)
+        try WordPageUpdater.updatePage(
+            at: url.path,
+            with: content(definitions: ["to make secure"], relatedWords: ["Strengthen"])
+        )
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(after.contains("[[Merge]]"), "User-written related words must not be overwritten")
+        XCTAssertFalse(after.contains("[[Strengthen]]"))
+    }
+
+    // MARK: Single atomic write
+
+    func testUpdatePage_allFourSectionsInSingleAtomicWrite() throws {
+        // Full new template — all auto-fill sections empty
+        let template = """
+        # Consolidate
+
+        > 📅 2026-03-26 | {POS} | {register/domain}
+
+        ## Pronunciation
+
+
+        ## Definition
+
+
+        ## Useful Frames
+
+        <!-- hint -->
+
+        ## Related Words
+
+
+        ## Word Family
+
+        - Noun:
+
+        """
+        let url = writeFile(name: "Consolidate.md", content: template)
+
+        try WordPageUpdater.updatePage(
+            at: url.path,
+            with: content(
+                definitions: ["to make or become more secure"],
+                partOfSpeech: "verb",
+                pronunciation: "kən-ˈsä-lə-ˌdāt",
+                relatedWords: ["Strengthen"]
+            )
+        )
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        // All four auto-fills present in the final file
+        XCTAssertTrue(after.contains("| verb |"), "POS should be written")
+        XCTAssertTrue(after.contains("kən-ˈsä-lə-ˌdāt"), "Pronunciation should be written")
+        XCTAssertTrue(after.contains("1. to make or become more secure"), "Definition should be written")
+        XCTAssertTrue(after.contains("[[Strengthen]]"), "Related words should be written")
+        // Manual sections untouched
+        XCTAssertTrue(after.contains("<!-- hint -->"), "Manual section hints should be preserved")
     }
 }
 
