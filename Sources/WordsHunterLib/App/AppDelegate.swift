@@ -5,6 +5,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusBar = StatusBarController()
     private let eventMonitor = EventMonitor()
     private var setupWindowController: SetupWindowController?
+    private var captureState = CaptureState()
 
     // Hold references to all active bubbles
     private var activeBubbles: [BubbleWindow] = []
@@ -16,6 +17,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.setup()
         statusBar.onOpenVault = { [weak self] in self?.openVaultFolder() }
         statusBar.onPreferences = { [weak self] in self?.showSetupWindow() }
+
+        // Restore persisted capture count into in-memory state
+        captureState.totalCaptured = AppSettings.shared.captureCount
+        statusBar.updateIcon(captureCount: captureState.totalCaptured)
 
         if AppSettings.shared.isSetupComplete {
             startEventMonitor()
@@ -55,17 +60,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startEventMonitor() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        eventMonitor.onWordCaptured = { [weak self] word in
-            self?.handleCapturedWord(word)
+        eventMonitor.onWordCaptured = { [weak self] word, cursorPoint in
+            self?.handleCapturedWord(word, at: cursorPoint)
         }
         eventMonitor.start()
     }
 
-    private func handleCapturedWord(_ word: String) {
+    private func handleCapturedWord(_ word: String, at cursorPoint: CGPoint) {
         let result = WordPageCreator.createPage(for: word)
         switch result {
         case .created(let path):
-            showBubble(for: word)
+            captureState.update(word: word)
+            statusBar.updateIcon(captureCount: captureState.totalCaptured)
+            showBubble(for: word, at: cursorPoint, state: captureState)
             let settings = AppSettings.shared
             if settings.lookupEnabled && !settings.mwApiKey.isEmpty {
                 DictionaryService.shared.startLookup(word: word, at: path)
@@ -83,14 +90,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showBubble(for word: String) {
-        let mousePos = NSEvent.mouseLocation
-        let bubble = BubbleWindow(word: word, near: mousePos)
+    private func showBubble(for word: String, at cursorPoint: CGPoint, state: CaptureState) {
+        let bubble = BubbleWindow(word: word, at: cursorPoint, state: state)
         activeBubbles.append(bubble)
         bubble.showAndAnimate()
 
-        // Clean up reference after animation completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+        // Clean up reference after animation completes (~1.1s full animation + buffer)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.activeBubbles.removeAll { $0 === bubble }
         }
     }
