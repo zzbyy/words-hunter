@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import NaturalLanguage
 
 struct TextCapture {
     /// Saves the current pasteboard, simulates Cmd+C to copy selected text,
@@ -46,9 +47,24 @@ struct TextCapture {
                     }
                 }
 
-                completion(validate(captured))
+                completion(validate(captured).map { lemmatize($0) })
             }
         }
+    }
+
+    /// Reduces an inflected word to its base (lemma) form.
+    /// Uses NLTagger(.lemma) on macOS 13+. Falls back to the original word if NLTagger
+    /// returns nil (proper nouns, acronyms, unknown words).
+    /// Returns the base form with the first letter capitalised.
+    static func lemmatize(_ word: String) -> String {
+        let lowercased = word.lowercased()
+        let tagger = NLTagger(tagSchemes: [.lemma])
+        tagger.string = lowercased
+        let (tag, _) = tagger.tag(at: lowercased.startIndex, unit: .word, scheme: .lemma)
+        if let lemma = tag?.rawValue, !lemma.isEmpty {
+            return lemma.prefix(1).uppercased() + lemma.dropFirst()
+        }
+        return word.prefix(1).uppercased() + word.dropFirst()
     }
 
     private static func validate(_ raw: String?) -> String? {

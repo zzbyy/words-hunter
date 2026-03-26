@@ -3,3 +3,5 @@
 dist/
 *.o
 *.d
+.claude/worktrees/
+PRD.md

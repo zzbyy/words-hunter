@@ -37,19 +37,50 @@ struct WordPageCreator {
         let content = """
         # \(filename)
 
-        > 📅 Captured on \(dateString)
+        > 📅 \(dateString) | {POS} | {register/domain}
+
+        ## Pronunciation
+
 
         ## Definition
 
 
-        ## Examples
+        ## Useful Frames
 
+        <!-- Semi-fixed patterns: "\(filename) A into B", "help \(filename.lowercased())" -->
 
         ## Collocations
 
+        <!-- Natural pairings: \(filename.lowercased()) + [power / position / gains / debt] -->
+
+        ## Examples
+
+        <!-- Real sentences from where you found the word. Include source. -->
+        1.
+        2.
+
+        ## Use It
+
+        <!-- Write one sentence YOU would actually say or write. Not copied — yours. -->
 
         ## Synonyms
 
+        <!-- List each with: HOW does it differ from this word? -->
+        -
+
+        ## Related Words
+
+
+        ## Word Family
+
+        - Noun:
+        - Verb:
+        - Adjective:
+        - Adverb:
+
+        ## Memory Hook
+
+        <!-- Etymology, mnemonic, or personal connection that makes it stick. -->
         """
 
         do {
