@@ -4,7 +4,7 @@ import CoreGraphics
 final class EventMonitor {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    var onWordCaptured: ((String) -> Void)?
+    var onWordCaptured: ((String, CGPoint) -> Void)?
 
     func start() {
         guard AXIsProcessTrusted() else {
@@ -61,12 +61,15 @@ final class EventMonitor {
             CGEvent.tapEnable(tap: tap, enable: true)
         }
 
+        // Capture cursor position at event time before any async delay
+        let cursorPoint = event.location
+
         // Dispatch word capture after a brief delay for selection to settle
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
             TextCapture.captureSelectedText { word in
                 guard let word else { return }
-                self.onWordCaptured?(word)
+                self.onWordCaptured?(word, cursorPoint)
             }
         }
     }

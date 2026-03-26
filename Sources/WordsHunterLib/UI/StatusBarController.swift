@@ -24,6 +24,19 @@ final class StatusBarController {
         statusItem?.menu = menu
     }
 
+    func updateIcon(captureCount: Int) {
+        statusItem?.button?.title = StatusBarController.iconTitle(for: captureCount)
+    }
+
+    static func iconTitle(for captureCount: Int) -> String {
+        switch captureCount {
+        case ..<10:  return "🎯"
+        case ..<25:  return "🏹"
+        case ..<100: return "🎒"
+        default:     return "🏆"
+        }
+    }
+
     @objc private func openVault() {
         onOpenVault?()
     }
