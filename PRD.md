@@ -1,7 +1,7 @@
 # Words Hunter — Product Requirements Document
 
-> **Version**: 1.0
-> **Date**: 2026-03-25
+> **Version**: 1.6.0.0
+> **Date**: 2026-03-26
 > **Platform**: macOS 13+ (Ventura and later)
 > **Tech Stack**: Swift 5.9+, AppKit, CoreGraphics (CGEventTap), Swift Package Manager
 
@@ -11,7 +11,7 @@
 
 **Words Hunter** is a macOS native menu bar app for English learners. It lets users capture new vocabulary words from **any app** — Chrome, Books, iTerm2, Ghostty, or any other macOS application — with a single gesture: **Option(⌥) + double-click**.
 
-When a word is captured, the app automatically creates a new markdown page in the user's **Obsidian vault** with a structured template for the user to fill in later (definitions, examples, collocations, synonyms).
+When a word is captured, the app automatically: (1) lemmatizes the word to its base form ("consolidates" → "Consolidate"), (2) creates a new markdown page in the user's **Obsidian vault** with a 10-section production-first vocabulary template, and (3) auto-fills the Definition, Part of Speech, Pronunciation, and Related Words sections from the Merriam-Webster API and existing vault pages.
 
 ### Core Value Proposition
 
@@ -19,7 +19,7 @@ Eliminates the context-switching cost of manually creating vocabulary pages. The
 
 ### What This Is NOT
 
-- Not a dictionary app — it does **not** auto-fill definitions
+- Not a full dictionary app — definitions are supplementary, not the core feature
 - Not an Obsidian plugin — it's a standalone system-level app
 - Not cross-platform — macOS only for v1
 
