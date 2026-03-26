@@ -12,6 +12,7 @@ final class AppSettings {
         static let useWordFolder = "useWordFolder"
         static let lookupEnabled = "lookupEnabled"
         static let lookupRetries = "lookupRetries"
+        static let captureCount = "captureCount"
     }
 
     // MARK: - Vault
@@ -77,6 +78,14 @@ final class AppSettings {
                 KeychainHelper.write(newValue, account: "mwApiKey")
             }
         }
+    }
+
+    // MARK: - Capture count
+
+    /// Total words captured, persisted across app restarts. Streak is in-memory only.
+    var captureCount: Int {
+        get { defaults.integer(forKey: Key.captureCount) }
+        set { defaults.set(newValue, forKey: Key.captureCount) }
     }
 
     // MARK: - Init
