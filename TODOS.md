@@ -1,5 +1,28 @@
 # Words Hunter — TODOS
 
+## Deferred from capture animation feature (v1.6)
+
+### Milestone celebrations
+**What:** Special animation variant when captured word count hits milestone numbers (10, 25, 50, 100). Firework burst from the pouch, or brief count display in a sparkle cloud.
+**Why:** Gives users a sense of long-term progression and rewards consistent use over weeks/months.
+**Pros:** High emotional impact; makes the app feel like a game you play over months.
+**Cons:** Requires persistent word count (already tracked as `captureCount` in AppSettings from v1.6).
+**Context:** The base animation (Magic Lasso Pouch) ships first. Milestones are a natural v2 layer — the infrastructure is already in place via CaptureState. Just add `milestoneTriggered` computed property and a new animation branch in BubbleWindow.
+**Effort:** S (human) → XS (CC+gstack)
+**Priority:** P2
+
+---
+
+### Custom sound design
+**What:** Replace system sounds (Pop/Tink) with purpose-designed audio: a soft lasso swish for the snap, a gentle poof for the bubble phase, a small chime when the word reaches the pouch.
+**Why:** Sound is ~50% of the wow factor. Custom sounds make the animation feel designed rather than assembled from system components.
+**Cons:** Requires bundling audio assets (.caf or .aiff) or using AudioToolbox synthesis. Adds to app bundle size.
+**Context:** The base animation uses `NSSound(named: "Pop")`. Sound timing is already wired to fire at Phase 2 snap (350ms). Adding custom sounds is a pure swap — just change the NSSound source. Hardest part is producing quality audio assets.
+**Effort:** M (human: ~2 days for audio design) → S (CC: 15min for integration, audio design is the constraint)
+**Priority:** P2
+
+---
+
 ## Deferred from dictionary lookup feature (v1.5)
 
 ### Collins Dictionary support
