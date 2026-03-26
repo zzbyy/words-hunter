@@ -133,7 +133,23 @@ private final class BubbleView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.masksToBounds = false
-        layer?.backgroundColor = .clear // Crucial to prevent rectangular artifacts
+        layer?.backgroundColor = .clear
+
+        // Pre-compute pill geometry for reuse in draw and shadow setup
+        let pillRect = NSRect(
+            x: (bounds.width - bubbleSize.width) / 2,
+            y: (bounds.height - bubbleSize.height) / 2,
+            width: bubbleSize.width,
+            height: bubbleSize.height
+        )
+        let radius = pillRect.height / 2
+
+        // Setup shadow once (prevents rectangular artifact)
+        layer?.shadowPath = CGPath(roundedRect: pillRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        layer?.shadowColor = NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 0.25).cgColor
+        layer?.shadowOffset = .zero
+        layer?.shadowRadius = 15
+        layer?.shadowOpacity = 1
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -148,7 +164,7 @@ private final class BubbleView: NSView {
         )
         let radius = pillRect.height / 2
         let path = NSBezierPath(roundedRect: pillRect, xRadius: radius, yRadius: radius)
-        
+
         // 1. Draw Gradient Background
         NSGraphicsContext.current?.saveGraphicsState()
         path.addClip()
@@ -167,25 +183,18 @@ private final class BubbleView: NSView {
         border.lineWidth = 1
         border.stroke()
 
-        // 3. Setup Layer Shadow Path (Prevents the rectangular shadow artifact)
-        layer?.shadowPath = CGPath(roundedRect: pillRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-        layer?.shadowColor = NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 0.25).cgColor
-        layer?.shadowOffset = .zero
-        layer?.shadowRadius = 15
-        layer?.shadowOpacity = 1
-
-        // 4. Draw Text
+        // 3. Draw Text
         let font = NSFont.systemFont(ofSize: 16, weight: .bold)
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
-        
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white,
             .paragraphStyle: paragraphStyle,
             .kern: 0.2
         ]
-        
+
         let textSize = (word as NSString).size(withAttributes: attrs)
         let textRect = NSRect(
             x: pillRect.origin.x + (pillRect.width - textSize.width) / 2,
