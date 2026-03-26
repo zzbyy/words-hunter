@@ -1,5 +1,19 @@
 # Words Hunter — TODOS
 
+## Deferred from page template v2 (feat-page-template)
+
+### Auto-fill Word Family from MW `uros`
+**What:** Parse MW's `uros` (undefined run-ons) field to pre-populate the Word Family section. For "consolidate", MW returns forms like "consolidation" (n.), "consolidated" (adj.) as uros entries.
+**Why:** Saves the learner from manually looking up word forms. Word Family is one of the most important sections for native usage.
+**Pros:** MW uros is reasonably reliable. Zero extra API calls (data is already in the response).
+**Cons:** uros entries have varying `fl` (functional label) — "noun", "adjective", etc. — but not all entries label every form clearly. Parsing needs care to avoid mis-labeling.
+**Context:** Deferred from template v2 because Word Family is quick to fill manually and the parsing adds moderate complexity. Revisit after template v2 ships and the new sections are validated with real use.
+**Effort:** S (human) → S (CC+gstack)
+**Priority:** P2
+**Depends on:** ~~Template v2 shipping first~~ — unblocked as of v1.6.0.0
+
+---
+
 ## Deferred from dictionary lookup feature (v1.5)
 
 ### Collins Dictionary support
