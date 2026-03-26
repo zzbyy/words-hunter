@@ -7,11 +7,12 @@ enum PageCreationResult {
 }
 
 struct WordPageCreator {
-    static func createPage(for word: String) -> PageCreationResult {
+    /// Create a new word page for `lemma` (root form, e.g. "posit").
+    /// Filename is lowercased: "posit.md". Returns .skipped if the page already exists.
+    static func createPage(lemma: String, sourceApp: String) -> PageCreationResult {
         let settings = AppSettings.shared
+        let filename = lemma.lowercased()
 
-        // Capitalize first letter, preserve remaining case (e.g. "API" stays "API")
-        let filename = word.prefix(1).uppercased() + word.dropFirst()
         guard let folderURL = settings.wordsFolderURL else {
             return .error(message: "Vault path not configured")
         }
@@ -34,10 +35,21 @@ struct WordPageCreator {
 
         // Write the template
         let dateString = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        // Escape for YAML double-quoted string: escape backslashes first, then quotes.
+        let escapedApp = sourceApp
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
         let content = """
-        # \(filename)
+        ---
+        captured: \(dateString)
+        app: "\(escapedApp)"
+        pos: ""
+        pronunciation: ""
+        ---
 
-        > 📅 Captured on \(dateString)
+        ## Context
+        *(paste the sentence where you saw this word)*
 
         ## Definition
 
@@ -45,11 +57,19 @@ struct WordPageCreator {
         ## Examples
 
 
-        ## Collocations
+        ## Usage
+        **Register:**
+        **Common with:**
 
+        ## Word family
+        \(filename)
+        *(add related forms)*
 
-        ## Synonyms
+        ## Linked words
+        *(other captured words in the same semantic cluster — add [[wikilinks]])*
 
+        ## Memory hook
+        *(etymology, mnemonic, or story)*
         """
 
         do {

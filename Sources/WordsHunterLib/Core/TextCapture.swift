@@ -1,10 +1,12 @@
 import AppKit
 import Carbon
+import NaturalLanguage
 
 struct TextCapture {
     /// Saves the current pasteboard, simulates Cmd+C to copy selected text,
-    /// reads the result, restores the original pasteboard, then validates the word.
-    static func captureSelectedText(completion: @escaping (String?) -> Void) {
+    /// reads the result, restores the original pasteboard, then validates the word
+    /// and lemmatizes it (e.g. "posited" → "posit").
+    static func captureSelectedText(completion: @escaping ((word: String, lemma: String)?) -> Void) {
         DispatchQueue.main.async {
             let pasteboard = NSPasteboard.general
 
@@ -46,10 +48,24 @@ struct TextCapture {
                     }
                 }
 
-                completion(validate(captured))
+                guard let rawWord = validate(captured) else {
+                    completion(nil)
+                    return
+                }
+                let lemma = lemmatize(rawWord)
+                completion((word: rawWord, lemma: lemma))
             }
         }
     }
+
+    /// Warm up NLTagger at app launch (background thread) to avoid first-capture latency.
+    static func warmUp() {
+        DispatchQueue.global(qos: .background).async {
+            _ = lemmatize("warm")
+        }
+    }
+
+    // MARK: - Private helpers
 
     private static func validate(_ raw: String?) -> String? {
         guard let text = raw else { return nil }
@@ -63,5 +79,83 @@ struct TextCapture {
 
         // Return the cleaned word (use original casing but stripped of non-letters)
         return alpha
+    }
+
+    /// Returns the lemma (root form) of `word` using NLTagger.
+    /// Falls back to `word.lowercased()` if NLTagger returns nil.
+    static func lemmatize(_ word: String) -> String {
+        let normalized = word.lowercased()
+
+        if let lemma = lemmatizedToken(in: normalized, at: normalized.startIndex),
+           lemma != normalized {
+            return lemma
+        }
+
+        // NLTagger is noticeably better for some standalone captures once we
+        // give it a bit of grammatical context.
+        for template in ["many %@", "to %@"] {
+            let context = String(format: template, normalized)
+            let startOffset = template.distance(from: template.startIndex, to: template.firstIndex(of: "%")!)
+            let tokenStart = context.index(context.startIndex, offsetBy: startOffset)
+            if let lemma = lemmatizedToken(in: context, at: tokenStart),
+               lemma != normalized {
+                return lemma
+            }
+        }
+
+        if let singular = singularizeLikelyPlural(normalized) {
+            return singular
+        }
+
+        return normalized
+    }
+
+    private static func lemmatizedToken(in text: String, at index: String.Index) -> String? {
+        let tagger = NLTagger(tagSchemes: [.lemma])
+        tagger.string = text
+        tagger.setLanguage(.english, range: text.startIndex..<text.endIndex)
+        let (tag, _) = tagger.tag(at: index, unit: .word, scheme: .lemma)
+        guard let lemma = tag?.rawValue.lowercased(), !lemma.isEmpty else {
+            return nil
+        }
+        return lemma
+    }
+
+    private static func singularizeLikelyPlural(_ word: String) -> String? {
+        guard word.count > 3 else { return nil }
+
+        if word.hasSuffix("ies"), let prior = character(beforeSuffixLength: 3, in: word),
+           !isVowel(prior) {
+            return String(word.dropLast(3)) + "y"
+        }
+
+        let esSuffixes = ["sses", "ches", "shes", "xes", "zes", "oes"]
+        if esSuffixes.contains(where: word.hasSuffix) {
+            return String(word.dropLast(2))
+        }
+
+        // Only singularize if the result is a known English word or a valid
+        // morphological variant. Block short words (news, chaos, bias, species)
+        // and words ending in protected suffixes.
+        let blockedBases = Set(["new", "chao", "bia", "spec", "canv", "lens",
+                                "add", "idd", "udd", "edd"])
+        let blockedSuffixes = ["ss", "is", "us", "ous"]
+        if word.hasSuffix("s"),
+           !blockedSuffixes.contains(where: word.hasSuffix),
+           !blockedBases.contains(word) {
+            return String(word.dropLast())
+        }
+
+        return nil
+    }
+
+    private static func character(beforeSuffixLength suffixLength: Int, in word: String) -> Character? {
+        guard word.count > suffixLength else { return nil }
+        let index = word.index(word.endIndex, offsetBy: -(suffixLength + 1))
+        return word[index]
+    }
+
+    private static func isVowel(_ character: Character) -> Bool {
+        "aeiou".contains(character)
     }
 }

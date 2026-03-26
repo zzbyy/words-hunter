@@ -12,6 +12,7 @@ final class AppSettings {
         static let useWordFolder = "useWordFolder"
         static let lookupEnabled = "lookupEnabled"
         static let lookupRetries = "lookupRetries"
+        static let mwApiKey = "mwApiKey"
     }
 
     // MARK: - Vault
@@ -67,16 +68,10 @@ final class AppSettings {
         set { defaults.set(max(1, min(5, newValue)), forKey: Key.lookupRetries) }
     }
 
-    /// Merriam-Webster API key, stored in Keychain. Accessed via KeychainHelper.
+    /// Merriam-Webster API key, stored in UserDefaults.
     var mwApiKey: String {
-        get { KeychainHelper.read(account: "mwApiKey") ?? "" }
-        set {
-            if newValue.isEmpty {
-                KeychainHelper.delete(account: "mwApiKey")
-            } else {
-                KeychainHelper.write(newValue, account: "mwApiKey")
-            }
-        }
+        get { defaults.string(forKey: Key.mwApiKey) ?? "" }
+        set { defaults.set(newValue, forKey: Key.mwApiKey) }
     }
 
     // MARK: - Init

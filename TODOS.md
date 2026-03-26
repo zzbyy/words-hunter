@@ -41,7 +41,7 @@
 **Why:** Enables context-aware lookups, personalized example sentences, and better corpus collocations.
 **Pros:** Transforms the feature from "auto-fill a definition" to a true vocabulary enrichment layer.
 **Cons:** AXUIElement access varies by app. Not all apps expose text context.
-**Context:** This is part of the v3 vision in the CEO plan. Requires significant research into per-app AXUIElement compatibility.
+**Context:** Pairs directly with the `## Context` section in the v1.6 word template — if implemented, auto-fills the Context section instead of requiring the user to paste the sentence manually. Requires significant research into per-app AXUIElement compatibility.
 **Effort:** L (human) → M (CC+gstack)
 **Priority:** P3
 
