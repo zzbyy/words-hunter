@@ -11,8 +11,25 @@ extension URLSession: URLSessionProtocol {}
 // MARK: - DictionaryContent
 
 struct DictionaryContent {
-    let definitions: [String]
-    let source: String
+    var definitions: [String]
+    var source: String
+    var partOfSpeech: String?
+    var pronunciation: String?
+    var relatedWords: [String]
+
+    init(
+        definitions: [String],
+        source: String,
+        partOfSpeech: String? = nil,
+        pronunciation: String? = nil,
+        relatedWords: [String] = []
+    ) {
+        self.definitions = definitions
+        self.source = source
+        self.partOfSpeech = partOfSpeech
+        self.pronunciation = pronunciation
+        self.relatedWords = relatedWords
+    }
 }
 
 // MARK: - DictionaryService
@@ -26,7 +43,7 @@ struct DictionaryContent {
 ///       │
 ///       ├── guard lookupEnabled && !mwApiKey.isEmpty → return early
 ///       ├── cancel any existing Task for this word
-///       └── Task { retry loop → URLSession → JSON parse → WordPageUpdater }
+///       └── Task { retry loop → URLSession → JSON parse → vault scan → WordPageUpdater }
 ///               │
 ///               └── defer { lookupTasks[word] = nil }   ← evicts on completion
 final class DictionaryService {
@@ -51,14 +68,23 @@ final class DictionaryService {
         let apiKey = settings.mwApiKey
         let retries = settings.lookupRetries
         let session = self.session
+        // Capture vault scan parameters at call time (on main thread)
+        let useWordFolder = settings.useWordFolder
+        let folderURL = settings.wordsFolderURL
 
         let task = Task<Void, Never> {
             defer { lookupTasks[word] = nil }
             do {
-                if let content = try await fetchWithRetries(
+                if var content = try await fetchWithRetries(
                     word: word, apiKey: apiKey, retries: retries, session: session
                 ) {
-                    try WordPageUpdater.updateDefinition(at: path, with: content)
+                    // Vault scan for related words — only when word folder is configured
+                    if useWordFolder, let folderURL = folderURL {
+                        content.relatedWords = DictionaryService.vaultScanRelatedWords(
+                            word: word, definitions: content.definitions, folderURL: folderURL
+                        )
+                    }
+                    try WordPageUpdater.updatePage(at: path, with: content)
                 }
             } catch is CancellationError {
                 // Task was cancelled — normal, no action needed
@@ -74,6 +100,50 @@ final class DictionaryService {
     func cancelAll() {
         lookupTasks.values.forEach { $0.cancel() }
         lookupTasks.removeAll()
+    }
+
+    // MARK: - Vault scan
+
+    /// Scan the word folder for existing pages whose names appear in the definition text.
+    /// Returns a sorted list of Obsidian [[link]] targets.
+    ///
+    /// Rules:
+    /// - Only scans `.md` files in `folderURL` (not recursive)
+    /// - Skips candidates shorter than 4 chars (noise reduction)
+    /// - Excludes the captured word itself
+    /// - Whole-word case-insensitive match against joined definition text
+    static func vaultScanRelatedWords(word: String, definitions: [String], folderURL: URL) -> [String] {
+        let definitionText = definitions.joined(separator: " ").lowercased()
+        let wordLower = word.lowercased()
+
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: folderURL,
+                includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
+            )
+        } catch {
+            return []
+        }
+
+        var matches: [String] = []
+
+        for file in files {
+            guard file.pathExtension == "md" else { continue }
+            let candidate = file.deletingPathExtension().lastPathComponent
+            let candidateLower = candidate.lowercased()
+
+            guard candidateLower.count >= 4 else { continue }
+            guard candidateLower != wordLower else { continue }
+
+            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: candidateLower))\\b"
+            if definitionText.range(of: pattern, options: .regularExpression) != nil {
+                matches.append(candidate)
+            }
+        }
+
+        return matches.sorted()
     }
 
     // MARK: - Fetch with retry
@@ -147,8 +217,9 @@ final class DictionaryService {
 
     /// Parse MW API response.
     /// MW returns an array: if items are Dicts → definitions found; if items are Strings → word not found.
-    /// Take first 2 entries × first shortdef each.
-    private func parseMWResponse(data: Data) throws -> DictionaryContent? {
+    /// Extracts from first entry: POS (`fl`), pronunciation (`hwi.prs[0].mw`).
+    /// Takes first 2 entries × first shortdef each for definitions.
+    func parseMWResponse(data: Data) throws -> DictionaryContent? {
         let json = try JSONSerialization.jsonObject(with: data)
         guard let array = json as? [Any], !array.isEmpty else { return nil }
 
@@ -156,6 +227,17 @@ final class DictionaryService {
         if array.first is String { return nil }
 
         guard let entries = array as? [[String: Any]] else { return nil }
+
+        // POS and pronunciation from first entry only
+        let firstEntry = entries[0]
+        let partOfSpeech = firstEntry["fl"] as? String
+        let pronunciation: String? = {
+            guard let hwi = firstEntry["hwi"] as? [String: Any],
+                  let prs = hwi["prs"] as? [[String: Any]],
+                  let first = prs.first,
+                  let mw = first["mw"] as? String else { return nil }
+            return mw
+        }()
 
         var definitions: [String] = []
         for entry in entries.prefix(2) {
@@ -166,7 +248,12 @@ final class DictionaryService {
         }
 
         guard !definitions.isEmpty else { return nil }
-        return DictionaryContent(definitions: definitions, source: "Merriam-Webster")
+        return DictionaryContent(
+            definitions: definitions,
+            source: "Merriam-Webster",
+            partOfSpeech: partOfSpeech,
+            pronunciation: pronunciation
+        )
     }
 }
 
