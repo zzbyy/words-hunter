@@ -35,41 +35,49 @@ struct WordPageCreator {
 
         // Write the template
         let dateString = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        // Escape for YAML double-quoted string: escape backslashes first, then quotes.
-        let escapedApp = sourceApp
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: " ")
         let content = """
+        > [!info] \(filename)
+        > //
+
+        ## Sightings
+        - \(dateString) — *(context sentence where you saw the word)*
+
         ---
-        captured: \(dateString)
-        app: "\(escapedApp)"
-        pos: ""
-        pronunciation: ""
+
+        ## Meanings
+
+        ### 1. () *()*
+
+        > *()*
+
+        **My sentence:**
+        -
+
+        **Patterns:**
+        - *(common word combinations and grammar patterns)*
+
         ---
 
-        ## Context
-        *(paste the sentence where you saw this word)*
+        ## When to Use
 
-        ## Definition
+        **Where it fits:**
+        **In casual speech:**
 
+        ---
 
-        ## Examples
+        ## Word Family
 
+        *(list related forms, each with a short example)*
 
-        ## Usage
-        **Register:**
-        **Common with:**
+        ---
 
-        ## Word family
-        \(filename)
-        *(add related forms)*
+        ## See Also
+        *(link to other captured words with a note on how they differ)*
 
-        ## Linked words
-        *(other captured words in the same semantic cluster — add [[wikilinks]])*
+        ---
 
-        ## Memory hook
-        *(etymology, mnemonic, or story)*
+        ## Memory Tip
+        *(optional: etymology, mnemonic, personal association — anything that helps you remember)*
         """
 
         do {

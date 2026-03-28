@@ -9,10 +9,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // Hold references to all active bubbles
     private var activeBubbles: [BubbleWindow] = []
     private var isMonitoring = false
+    private var accessibilityPollTimer: Timer?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         installEditMenu()
-        requestAccessibilityIfNeeded()
         statusBar.setup()
         statusBar.onOpenVault = { [weak self] in self?.openVaultFolder() }
         statusBar.onPreferences = { [weak self] in self?.showSetupWindow() }
@@ -21,13 +21,35 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         TextCapture.warmUp()
 
         if AppSettings.shared.isSetupComplete {
-            startEventMonitor()
+            startMonitoringWhenTrusted()
         } else {
             showSetupWindow()
         }
     }
 
+    /// Starts the event monitor immediately if Accessibility is already granted,
+    /// otherwise prompts the user and polls until permission is granted.
+    private func startMonitoringWhenTrusted() {
+        if AXIsProcessTrusted() {
+            startEventMonitor()
+            return
+        }
+        // Show the system prompt
+        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true]
+        AXIsProcessTrustedWithOptions(options)
+        // Poll every second until permission arrives, then start
+        accessibilityPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            if AXIsProcessTrusted() {
+                timer.invalidate()
+                self.accessibilityPollTimer = nil
+                self.startEventMonitor()
+            }
+        }
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
+        accessibilityPollTimer?.invalidate()
         DictionaryService.shared.cancelAll()
     }
 
@@ -47,12 +69,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }()
         mainMenu.addItem(editItem)
         NSApp.mainMenu = mainMenu
-    }
-
-    private func requestAccessibilityIfNeeded() {
-        guard !AXIsProcessTrusted() else { return }
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true]
-        AXIsProcessTrustedWithOptions(options)
     }
 
     private func startEventMonitor() {

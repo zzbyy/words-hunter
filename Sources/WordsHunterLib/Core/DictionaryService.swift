@@ -11,10 +11,11 @@ extension URLSession: URLSessionProtocol {}
 // MARK: - DictionaryContent
 
 struct DictionaryContent {
-    let definitions: [String]       // shortdef[0] from first entry
+    let definitions: [String]       // all shortdefs from first entry
     let examples: [String]          // verbal illustrations from def.sseq.sense.dt.vis
     let pos: String?                // functional label from `fl` field
     let pronunciation: String?      // MW phonetic notation from `hwi.prs[0].mw`
+    let headword: String?           // syllable-separated hw from hwi.hw, e.g. "pos*it"
     let source: String
 }
 
@@ -162,22 +163,28 @@ final class DictionaryService {
         guard let entries = array as? [[String: Any]] else { return nil }
         guard let firstEntry = entries.first else { return nil }
 
-        // Definition: shortdef[0] from first entry
+        // Definitions: all shortdefs from first entry
         guard let shortdefs = firstEntry["shortdef"] as? [String],
-              let definition = shortdefs.first, !definition.isEmpty else { return nil }
+              !shortdefs.isEmpty, !shortdefs[0].isEmpty else { return nil }
 
         // POS: fl field from first entry
         let pos = firstEntry["fl"] as? String
 
-        // Pronunciation: hwi.prs[0].mw from first entry
+        // Pronunciation and headword from hwi
         let pronunciation: String?
-        if let hwi = firstEntry["hwi"] as? [String: Any],
-           let prs = hwi["prs"] as? [[String: Any]],
-           let firstPr = prs.first,
-           let mw = firstPr["mw"] as? String {
-            pronunciation = mw
+        let headword: String?
+        if let hwi = firstEntry["hwi"] as? [String: Any] {
+            headword = hwi["hw"] as? String
+            if let prs = hwi["prs"] as? [[String: Any]],
+               let firstPr = prs.first,
+               let mw = firstPr["mw"] as? String {
+                pronunciation = mw
+            } else {
+                pronunciation = nil
+            }
         } else {
             pronunciation = nil
+            headword = nil
         }
 
         // Examples: collect vis entries from def.sseq.sense.dt across all entries, strip format codes
@@ -208,10 +215,11 @@ final class DictionaryService {
         }
 
         return DictionaryContent(
-            definitions: [definition],
+            definitions: shortdefs,
             examples: examples,
             pos: pos,
             pronunciation: pronunciation,
+            headword: headword,
             source: "Merriam-Webster"
         )
     }
