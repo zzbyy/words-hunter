@@ -1,0 +1,19 @@
+{
+  "name": "words-hunter-openclaw",
+  "version": "1.0.0",
+  "description": "Master vocabulary captured by Words Hunter via conversational AI sessions.",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:evals": "vitest run tests/evals"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "chokidar": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1"
+  }
+}

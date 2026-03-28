@@ -292,6 +292,7 @@ final class SetupViewController: NSViewController {
         s.mwApiKey = mwApiKeyField.stringValue.trimmingCharacters(in: apiKeyTrimSet)
         s.lookupRetries = Int(retriesStepper.intValue)
         s.isSetupComplete = true
+        s.exportConfigBridge()
 
         setupDelegate?.setupViewControllerDidComplete(self)
     }
