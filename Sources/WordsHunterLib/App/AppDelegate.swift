@@ -17,9 +17,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onOpenVault = { [weak self] in self?.openVaultFolder() }
         statusBar.onPreferences = { [weak self] in self?.showSetupWindow() }
 
-        // Warm up NLTagger to avoid first-capture latency (~200ms cold start)
-        TextCapture.warmUp()
-
         if AppSettings.shared.isSetupComplete {
             startEventMonitor()
         } else {
@@ -58,21 +55,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startEventMonitor() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        eventMonitor.onWordCaptured = { [weak self] captured in
-            self?.handleCapturedWord(captured)
+        eventMonitor.onWordCaptured = { [weak self] word in
+            self?.handleCapturedWord(word)
         }
         eventMonitor.start()
     }
 
-    private func handleCapturedWord(_ captured: (word: String, lemma: String)) {
-        let sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
-        let result = WordPageCreator.createPage(lemma: captured.lemma, sourceApp: sourceApp)
+    private func handleCapturedWord(_ word: String) {
+        let result = WordPageCreator.createPage(for: word)
         switch result {
         case .created(let path):
-            showBubble(for: captured.word)
+            showBubble(for: word)
             let settings = AppSettings.shared
             if settings.lookupEnabled && !settings.mwApiKey.isEmpty {
-                DictionaryService.shared.startLookup(word: captured.lemma, at: path)
+                DictionaryService.shared.startLookup(word: word, at: path)
             }
         case .skipped:
             break // already exists, silent

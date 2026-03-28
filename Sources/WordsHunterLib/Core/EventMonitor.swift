@@ -4,7 +4,7 @@ import CoreGraphics
 final class EventMonitor {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    var onWordCaptured: (((word: String, lemma: String)) -> Void)?
+    var onWordCaptured: ((String) -> Void)?
 
     func start() {
         guard AXIsProcessTrusted() else {

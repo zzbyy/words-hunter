@@ -11,11 +11,11 @@ extension URLSession: URLSessionProtocol {}
 // MARK: - DictionaryContent
 
 struct DictionaryContent {
-    let definitions: [String]       // shortdef[0] from first entry
-    let examples: [String]          // verbal illustrations from def.sseq.sense.dt.vis
-    let pos: String?                // functional label from `fl` field
-    let pronunciation: String?      // MW phonetic notation from `hwi.prs[0].mw`
+    let definitions: [String]       // first shortdef from first 2 entries
     let source: String
+    let partOfSpeech: String?       // functional label from `fl` field
+    let pronunciation: String?      // MW phonetic notation from `hwi.prs[0].mw`
+    var relatedWords: [String] = [] // vault-scanned backlinks (populated after fetch)
 }
 
 // MARK: - DictionaryService
@@ -29,7 +29,7 @@ struct DictionaryContent {
 ///       │
 ///       ├── guard lookupEnabled && !mwApiKey.isEmpty → return early
 ///       ├── cancel any existing Task for this word
-///       └── Task { retry loop → URLSession → JSON parse → WordPageUpdater }
+///       └── Task { retry loop → URLSession → JSON parse → vault scan → WordPageUpdater }
 ///               │
 ///               └── defer { lookupTasks[word] = nil }   ← evicts on completion
 final class DictionaryService {
@@ -43,7 +43,7 @@ final class DictionaryService {
         self.session = session
     }
 
-    /// Start a background lookup for `word` (lemma), writing results to the file at `path`.
+    /// Start a background lookup for `word`, writing results to the file at `path`.
     func startLookup(word: String, at path: String) {
         let settings = AppSettings.shared
         guard settings.lookupEnabled, !settings.mwApiKey.isEmpty else { return }
@@ -54,14 +54,23 @@ final class DictionaryService {
         let apiKey = settings.mwApiKey
         let retries = settings.lookupRetries
         let session = self.session
+        // Capture vault scan parameters at call time (on main thread)
+        let useWordFolder = settings.useWordFolder
+        let folderURL = settings.wordsFolderURL
 
         let task = Task<Void, Never> {
             defer { lookupTasks[word] = nil }
             do {
-                if let content = try await fetchWithRetries(
+                if var content = try await fetchWithRetries(
                     word: word, apiKey: apiKey, retries: retries, session: session
                 ) {
-                    try WordPageUpdater.update(at: path, with: content, lemma: word)
+                    // Vault scan for related words — only when word folder is configured
+                    if useWordFolder, let folderURL = folderURL {
+                        content.relatedWords = DictionaryService.vaultScanRelatedWords(
+                            word: word, definitions: content.definitions, folderURL: folderURL
+                        )
+                    }
+                    try WordPageUpdater.updatePage(at: path, with: content)
                 }
             } catch is CancellationError {
                 // Task was cancelled — normal, no action needed
@@ -77,6 +86,50 @@ final class DictionaryService {
     func cancelAll() {
         lookupTasks.values.forEach { $0.cancel() }
         lookupTasks.removeAll()
+    }
+
+    // MARK: - Vault scan
+
+    /// Scan the word folder for existing pages whose names appear in the definition text.
+    /// Returns a sorted list of Obsidian [[link]] targets.
+    ///
+    /// Rules:
+    /// - Only scans `.md` files in `folderURL` (not recursive)
+    /// - Skips candidates shorter than 4 chars (noise reduction)
+    /// - Excludes the captured word itself
+    /// - Whole-word case-insensitive match against joined definition text
+    static func vaultScanRelatedWords(word: String, definitions: [String], folderURL: URL) -> [String] {
+        let definitionText = definitions.joined(separator: " ").lowercased()
+        let wordLower = word.lowercased()
+
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: folderURL,
+                includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
+            )
+        } catch {
+            return []
+        }
+
+        var matches: [String] = []
+
+        for file in files {
+            guard file.pathExtension == "md" else { continue }
+            let candidate = file.deletingPathExtension().lastPathComponent
+            let candidateLower = candidate.lowercased()
+
+            guard candidateLower.count >= 4 else { continue }
+            guard candidateLower != wordLower else { continue }
+
+            let pattern = "\\b\(NSRegularExpression.escapedPattern(for: candidateLower))\\b"
+            if definitionText.range(of: pattern, options: .regularExpression) != nil {
+                matches.append(candidate)
+            }
+        }
+
+        return matches.sorted()
     }
 
     // MARK: - Fetch with retry
@@ -150,9 +203,9 @@ final class DictionaryService {
 
     /// Parse MW API response.
     /// MW returns an array: if items are Dicts → definitions found; if items are Strings → word not found.
-    /// Extracts: shortdef[0] as definition, fl as pos, hwi.prs[0].mw as pronunciation,
-    /// def.sseq.sense.dt.vis entries as examples (MW format codes stripped).
-    internal func parseMWResponse(data: Data) throws -> DictionaryContent? {
+    /// Extracts from first entry: POS (`fl`), pronunciation (`hwi.prs[0].mw`).
+    /// Takes first 2 entries × first shortdef each for definitions.
+    func parseMWResponse(data: Data) throws -> DictionaryContent? {
         let json = try JSONSerialization.jsonObject(with: data)
         guard let array = json as? [Any], !array.isEmpty else { return nil }
 
@@ -160,69 +213,33 @@ final class DictionaryService {
         if array.first is String { return nil }
 
         guard let entries = array as? [[String: Any]] else { return nil }
-        guard let firstEntry = entries.first else { return nil }
 
-        // Definition: shortdef[0] from first entry
-        guard let shortdefs = firstEntry["shortdef"] as? [String],
-              let definition = shortdefs.first, !definition.isEmpty else { return nil }
+        // POS and pronunciation from first entry only
+        let firstEntry = entries[0]
+        let partOfSpeech = firstEntry["fl"] as? String
+        let pronunciation: String? = {
+            guard let hwi = firstEntry["hwi"] as? [String: Any],
+                  let prs = hwi["prs"] as? [[String: Any]],
+                  let first = prs.first,
+                  let mw = first["mw"] as? String else { return nil }
+            return mw
+        }()
 
-        // POS: fl field from first entry
-        let pos = firstEntry["fl"] as? String
-
-        // Pronunciation: hwi.prs[0].mw from first entry
-        let pronunciation: String?
-        if let hwi = firstEntry["hwi"] as? [String: Any],
-           let prs = hwi["prs"] as? [[String: Any]],
-           let firstPr = prs.first,
-           let mw = firstPr["mw"] as? String {
-            pronunciation = mw
-        } else {
-            pronunciation = nil
-        }
-
-        // Examples: collect vis entries from def.sseq.sense.dt across all entries, strip format codes
-        var examples: [String] = []
-        for entry in entries {
-            guard let defArray = entry["def"] as? [[String: Any]] else { continue }
-            for defItem in defArray {
-                guard let sseq = defItem["sseq"] as? [[[Any]]] else { continue }
-                for sseqGroup in sseq {
-                    for senseItem in sseqGroup {
-                        guard senseItem.count >= 2,
-                              let senseType = senseItem[0] as? String, senseType == "sense",
-                              let senseData = senseItem[1] as? [String: Any],
-                              let dt = senseData["dt"] as? [[Any]] else { continue }
-                        for dtItem in dt {
-                            guard dtItem.count >= 2,
-                                  let dtType = dtItem[0] as? String, dtType == "vis",
-                                  let visArray = dtItem[1] as? [[String: Any]] else { continue }
-                            for visEntry in visArray {
-                                if let t = visEntry["t"] as? String {
-                                    examples.append(stripMWFormatCodes(t))
-                                }
-                            }
-                        }
-                    }
-                }
+        var definitions: [String] = []
+        for entry in entries.prefix(2) {
+            if let shortdefs = entry["shortdef"] as? [String],
+               let first = shortdefs.first {
+                definitions.append(first)
             }
         }
 
+        guard !definitions.isEmpty else { return nil }
         return DictionaryContent(
-            definitions: [definition],
-            examples: examples,
-            pos: pos,
-            pronunciation: pronunciation,
-            source: "Merriam-Webster"
+            definitions: definitions,
+            source: "Merriam-Webster",
+            partOfSpeech: partOfSpeech,
+            pronunciation: pronunciation
         )
-    }
-
-    // MARK: - Helpers
-
-    /// Strips MW inline format codes such as {it}, {/it}, {bc}, {ldquo}, {rdquo}, etc.
-    private func stripMWFormatCodes(_ text: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "\\{[^}]+\\}") else { return text }
-        let range = NSRange(text.startIndex..., in: text)
-        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
     }
 }
 

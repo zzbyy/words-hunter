@@ -7,12 +7,11 @@ enum PageCreationResult {
 }
 
 struct WordPageCreator {
-    /// Create a new word page for `lemma` (root form, e.g. "posit").
-    /// Filename is lowercased: "posit.md". Returns .skipped if the page already exists.
-    static func createPage(lemma: String, sourceApp: String) -> PageCreationResult {
+    static func createPage(for word: String) -> PageCreationResult {
         let settings = AppSettings.shared
-        let filename = lemma.lowercased()
 
+        // Capitalize first letter, preserve remaining case (e.g. "API" stays "API")
+        let filename = word.prefix(1).uppercased() + word.dropFirst()
         guard let folderURL = settings.wordsFolderURL else {
             return .error(message: "Vault path not configured")
         }
@@ -35,41 +34,53 @@ struct WordPageCreator {
 
         // Write the template
         let dateString = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        // Escape for YAML double-quoted string: escape backslashes first, then quotes.
-        let escapedApp = sourceApp
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: " ")
         let content = """
-        ---
-        captured: \(dateString)
-        app: "\(escapedApp)"
-        pos: ""
-        pronunciation: ""
-        ---
+        # \(filename)
 
-        ## Context
-        *(paste the sentence where you saw this word)*
+        > 📅 \(dateString) | {POS} | {register/domain}
+
+        ## Pronunciation
+
 
         ## Definition
 
 
+        ## Useful Frames
+
+        <!-- Semi-fixed patterns: "\(filename) A into B", "help \(filename.lowercased())" -->
+
+        ## Collocations
+
+        <!-- Natural pairings: \(filename.lowercased()) + [power / position / gains / debt] -->
+
         ## Examples
 
+        <!-- Real sentences from where you found the word. Include source. -->
+        1.
+        2.
 
-        ## Usage
-        **Register:**
-        **Common with:**
+        ## Use It
 
-        ## Word family
-        \(filename)
-        *(add related forms)*
+        <!-- Write one sentence YOU would actually say or write. Not copied — yours. -->
 
-        ## Linked words
-        *(other captured words in the same semantic cluster — add [[wikilinks]])*
+        ## Synonyms
 
-        ## Memory hook
-        *(etymology, mnemonic, or story)*
+        <!-- List each with: HOW does it differ from this word? -->
+        -
+
+        ## Related Words
+
+
+        ## Word Family
+
+        - Noun:
+        - Verb:
+        - Adjective:
+        - Adverb:
+
+        ## Memory Hook
+
+        <!-- Etymology, mnemonic, or personal connection that makes it stick. -->
         """
 
         do {
