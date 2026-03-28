@@ -1,18 +1,19 @@
 import Foundation
 
-/// Reads an existing word page, checks that Definition and Examples sections are still empty,
-/// patches frontmatter (pos, pronunciation), fills Definition, Examples, and Linked words,
+/// Reads an existing word page, checks that the Meanings section is still unedited,
+/// fills in callout (headword + pronunciation), numbered meaning blocks, and See Also links,
 /// then writes back atomically.
 ///
 /// Safety checks:
 /// - File not found → abort silently (deleted between create and lookup)
-/// - Definition or Examples section already contains user text → abort silently (no clobbering)
+/// - Old format (no `> [!info]` callout) → abort silently (no migration)
+/// - Meanings placeholder already edited → abort silently (no clobbering)
 /// - Uses FileManager.replaceItem for atomic write (no partial state visible to Obsidian)
 enum WordPageUpdater {
 
     /// Update a word page at `path` with looked-up `content`.
     /// `lemma` is the root form of the word (e.g. "posit"), used for VaultScanner self-exclusion.
-    /// Silently aborts if the file is gone or the user has already written to Definition or Examples.
+    /// Silently aborts if the file is gone, uses the old template format, or the user has already edited Meanings.
     static func update(at path: String, with content: DictionaryContent, lemma: String) throws {
         let fileURL = URL(fileURLWithPath: path)
 
@@ -26,15 +27,13 @@ enum WordPageUpdater {
             return  // unreadable — abort silently
         }
 
-        // Guard: abort if user has already written to Definition
-        guard let definitionBody = extractSectionBody(named: "Definition", from: text),
-              definitionBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Guard: old-format pages (YAML frontmatter) — do not touch
+        guard text.contains("> [!info]") else { return }
 
-        // Guard: abort if user has already written to Examples
-        guard let examplesBody = extractSectionBody(named: "Examples", from: text),
-              examplesBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Guard: abort if user has already edited the first meaning placeholder
+        guard text.contains("### 1. () *()*") else { return }
 
-        // Scan vault for related words (uses combined definition + example text for matching)
+        // Scan vault for related words
         let scanText = content.definitions.joined(separator: " ")
             + " " + content.examples.joined(separator: " ")
         let relatedWords = VaultScanner.scan(
@@ -45,47 +44,40 @@ enum WordPageUpdater {
 
         var updated = text
 
-        // Patch frontmatter: pos: "" → pos: "verb"
-        if let pos = content.pos {
-            var lines = updated.components(separatedBy: "\n")
-            for i in lines.indices {
-                if lines[i] == "pos: \"\"" {
-                    lines[i] = "pos: \"\(pos)\""
-                    break
-                }
-            }
-            updated = lines.joined(separator: "\n")
-        }
-
-        // Patch frontmatter: pronunciation: "" → pronunciation: "pə-ˈzit"
-        if let pronunciation = content.pronunciation {
-            var lines = updated.components(separatedBy: "\n")
-            for i in lines.indices {
-                if lines[i] == "pronunciation: \"\"" {
-                    lines[i] = "pronunciation: \"\(pronunciation)\""
-                    break
-                }
-            }
-            updated = lines.joined(separator: "\n")
-        }
-
-        // Replace Definition section with plain text definition
-        let definitionText = content.definitions.first ?? ""
-        guard let afterDefinition = replaceSection(named: "Definition", in: updated, with: "\n\(definitionText)\n\n") else { return }
-        updated = afterDefinition
-
-        // Replace Examples section with bullet-list of verbal illustrations
-        if !content.examples.isEmpty {
-            let examplesText = content.examples.map { "- \($0)" }.joined(separator: "\n")
-            if let afterExamples = replaceSection(named: "Examples", in: updated, with: "\n\(examplesText)\n\n") {
-                updated = afterExamples
+        // Fill callout block: replace headword and pronunciation lines
+        let syllableDisplay = content.headword?
+            .replacingOccurrences(of: "*", with: "·") ?? lemma
+        let pronunciationDisplay = content.pronunciation ?? ""
+        var lines = updated.components(separatedBy: "\n")
+        if let calloutIndex = lines.firstIndex(where: { $0.hasPrefix("> [!info]") }) {
+            lines[calloutIndex] = "> [!info] \(syllableDisplay)"
+            if calloutIndex + 1 < lines.count && lines[calloutIndex + 1].hasPrefix("> /") {
+                lines[calloutIndex + 1] = "> /\(pronunciationDisplay)/"
             }
         }
+        updated = lines.joined(separator: "\n")
 
-        // Replace Linked words placeholder if vault scan found related words
+        // Build numbered meaning blocks from all definitions
+        let pos = content.pos ?? ""
+        var meaningBlocks: [String] = []
+        for (index, def) in content.definitions.enumerated() {
+            let num = index + 1
+            let example = index < content.examples.count ? content.examples[index] : ""
+            var block = "### \(num). (\(pos)) *(\(def))*\n"
+            block += "\n> *(\(example))*\n"
+            block += "\n**My sentence:**\n-\n"
+            block += "\n**Patterns:**\n- *(common word combinations and grammar patterns)*"
+            meaningBlocks.append(block)
+        }
+        let meaningsReplacement = "\n" + meaningBlocks.joined(separator: "\n\n") + "\n\n---\n"
+        if let afterMeanings = replaceSection(named: "Meanings", in: updated, with: meaningsReplacement) {
+            updated = afterMeanings
+        }
+
+        // Fill See Also with related words from vault scan
         if !relatedWords.isEmpty {
             let linkedText = relatedWords.map { "- [[\($0)]]" }.joined(separator: "\n")
-            if let afterLinked = replaceSection(named: "Linked words", in: updated, with: "\n\(linkedText)\n\n") {
+            if let afterLinked = replaceSection(named: "See Also", in: updated, with: "\n\(linkedText)\n\n---\n") {
                 updated = afterLinked
             }
         }

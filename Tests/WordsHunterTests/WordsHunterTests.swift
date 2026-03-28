@@ -134,7 +134,7 @@ final class DictionaryServiceJSONTests: XCTestCase {
 
     // MARK: Happy path
 
-    func testParsing_happyPath_singleDefinition() throws {
+    func testParsing_happyPath_returnsAllShortdefs() throws {
         let json = """
         [
           {
@@ -148,8 +148,15 @@ final class DictionaryServiceJSONTests: XCTestCase {
 
         let content = try callParseMWResponse(json)
         XCTAssertNotNil(content)
-        XCTAssertEqual(content?.definitions.count, 1)
+        XCTAssertEqual(content?.definitions.count, 2)
         XCTAssertEqual(content?.definitions[0], "lasting for a very short time")
+        XCTAssertEqual(content?.definitions[1], "of or relating to ephemera")
+    }
+
+    func testParsing_headwordExtracted() throws {
+        let json = mwJSON()
+        let content = try callParseMWResponse(json)
+        XCTAssertEqual(content?.headword, "pos*it")
     }
 
     func testParsing_posFromFl() throws {
@@ -277,132 +284,55 @@ final class WordPageCreatorTests: XCTestCase {
         super.tearDown()
     }
 
-    private func settingsWithVault() -> AppSettings {
-        let d = UserDefaults(suiteName: UUID().uuidString)!
-        let s = AppSettings(defaults: d)
-        s.vaultPath = tempVault.path
-        s.useWordFolder = false
-        s.isSetupComplete = true
-        return s
-    }
-
     func testCreatePage_lowercaseFilename() throws {
-        let settings = settingsWithVault()
-        // Inject settings by writing to the shared path via AppSettings.shared mock isn't possible
-        // directly, so we test the filename logic by checking the file URL
-        // (WordPageCreator uses AppSettings.shared; for this test we verify the filename casing logic)
         let lemma = "Posit"
         let expected = "posit.md"
         XCTAssertEqual(lemma.lowercased() + ".md", expected)
     }
 
-    func testCreatePage_frontmatterFields() throws {
-        // Write a temp file matching what WordPageCreator would produce and verify format
-        let dateString = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        let content = """
-        ---
-        captured: \(dateString)
-        app: Safari
-        pos: ""
-        pronunciation: ""
-        ---
+    func testCreatePage_calloutBlock() {
+        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let content = makeTemplate(lemma: "posit", date: dateString)
+        XCTAssertTrue(content.contains("> [!info] posit"))
+        XCTAssertTrue(content.contains("> //"))
+    }
 
-        ## Context
-        *(paste the sentence where you saw this word)*
-
-        ## Definition
-
-
-        ## Examples
-
-
-        ## Usage
-        **Register:**
-        **Common with:**
-
-        ## Word family
-        posit
-        *(add related forms)*
-
-        ## Linked words
-        *(other captured words in the same semantic cluster — add [[wikilinks]])*
-
-        ## Memory hook
-        *(etymology, mnemonic, or story)*
-        """
-        XCTAssertTrue(content.contains("pos: \"\""))
-        XCTAssertTrue(content.contains("pronunciation: \"\""))
-        XCTAssertTrue(content.contains("app: Safari"))
-        XCTAssertTrue(content.contains("captured: \(dateString)"))
+    func testCreatePage_sightingsWithDate() {
+        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let content = makeTemplate(lemma: "posit", date: dateString)
+        XCTAssertTrue(content.contains("- \(dateString) — *(context sentence where you saw the word)*"))
     }
 
     func testCreatePage_allSectionsPresent() {
-        // Verify the template produced by WordPageCreator contains all 7 required sections
-        let dateString = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        let content = """
-        ---
-        captured: \(dateString)
-        app: Safari
-        pos: ""
-        pronunciation: ""
-        ---
-
-        ## Context
-        *(paste the sentence where you saw this word)*
-
-        ## Definition
-
-
-        ## Examples
-
-
-        ## Usage
-        **Register:**
-        **Common with:**
-
-        ## Word family
-        posit
-        *(add related forms)*
-
-        ## Linked words
-        *(other captured words in the same semantic cluster — add [[wikilinks]])*
-
-        ## Memory hook
-        *(etymology, mnemonic, or story)*
-        """
-        for section in ["Context", "Definition", "Examples", "Usage", "Word family", "Linked words", "Memory hook"] {
+        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let content = makeTemplate(lemma: "posit", date: dateString)
+        for section in ["Sightings", "Meanings", "When to Use", "Word Family", "See Also", "Memory Tip"] {
             XCTAssertTrue(content.contains("## \(section)"), "Missing section: \(section)")
         }
     }
 
-    func testCreatePage_wordFamilyPrefilled() {
-        let lemma = "posit"
-        let content = """
-        ## Word family
-        \(lemma)
-        *(add related forms)*
-        """
-        XCTAssertTrue(content.contains("\nposit\n"))
+    func testCreatePage_meaningPlaceholder() {
+        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let content = makeTemplate(lemma: "posit", date: dateString)
+        XCTAssertTrue(content.contains("### 1. () *()*"))
+    }
+
+    func testCreatePage_noFrontmatter() {
+        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let content = makeTemplate(lemma: "posit", date: dateString)
+        XCTAssertFalse(content.contains("---\ncaptured:"), "Template must not contain YAML frontmatter")
+        XCTAssertFalse(content.contains("pos: \"\""))
+        XCTAssertFalse(content.contains("pronunciation: \"\""))
     }
 
     func testCreatePage_noWordHeading() {
-        // Template must NOT contain a # heading for the word itself
-        let content = """
-        ---
-        captured: 2026-03-26
-        app: Safari
-        pos: ""
-        pronunciation: ""
-        ---
-
-        ## Context
-        """
+        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        let content = makeTemplate(lemma: "posit", date: dateString)
         XCTAssertFalse(content.hasPrefix("# "), "Template must not start with a word heading")
         XCTAssertFalse(content.contains("\n# "), "Template must not contain a word heading")
     }
 
     func testCreatePage_recapture_returnsSkipped() throws {
-        // Create the file first, then try creating again — should return .skipped
         let d = UserDefaults(suiteName: UUID().uuidString)!
         let settings = AppSettings(defaults: d)
         settings.vaultPath = tempVault.path
@@ -416,6 +346,54 @@ final class WordPageCreatorTests: XCTestCase {
         // Verify the file exists — .skipped is returned when the file already exists
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
     }
+
+    // Helper that reproduces the template string from WordPageCreator
+    private func makeTemplate(lemma: String, date: String) -> String {
+        """
+        > [!info] \(lemma)
+        > //
+
+        ## Sightings
+        - \(date) — *(context sentence where you saw the word)*
+
+        ---
+
+        ## Meanings
+
+        ### 1. () *()*
+
+        > *()*
+
+        **My sentence:**
+        -
+
+        **Patterns:**
+        - *(common word combinations and grammar patterns)*
+
+        ---
+
+        ## When to Use
+
+        **Where it fits:**
+        **In casual speech:**
+
+        ---
+
+        ## Word Family
+
+        *(list related forms, each with a short example)*
+
+        ---
+
+        ## See Also
+        *(link to other captured words with a note on how they differ)*
+
+        ---
+
+        ## Memory Tip
+        *(optional: etymology, mnemonic, personal association — anything that helps you remember)*
+        """
+    }
 }
 
 // MARK: - WordPageCreator Regression Test
@@ -423,7 +401,6 @@ final class WordPageCreatorTests: XCTestCase {
 final class WordPageCreatorRegressionTests: XCTestCase {
 
     /// Regression: WordPageCreator must use wordsFolderURL rather than constructing its own URL inline.
-    /// Before the fix, it always appended wordFolder regardless of useWordFolder.
     func testCreatePage_useWordFolderFalse_writesToVaultRoot() throws {
         let tempVault = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -436,8 +413,6 @@ final class WordPageCreatorRegressionTests: XCTestCase {
         settings.useWordFolder = false
         settings.isSetupComplete = true
 
-        // We can't swap the singleton easily, but we can verify wordsFolderURL is vault root
-        // and that the file would be written there (indirect verification via the URL logic)
         let folderURL = settings.wordsFolderURL
         XCTAssertEqual(folderURL?.path, tempVault.path,
                        "useWordFolder=false should return vault root, not a subfolder")
@@ -469,125 +444,175 @@ final class WordPageUpdaterTests: XCTestCase {
     }
 
     private func makeContent(
-        definition: String = "to assume or affirm the existence of : postulate",
+        definitions: [String] = ["to assume or affirm the existence of : postulate"],
         examples: [String] = [],
         pos: String? = "verb",
-        pronunciation: String? = "pə-ˈzit"
+        pronunciation: String? = "pə-ˈzit",
+        headword: String? = "pos*it"
     ) -> DictionaryContent {
         DictionaryContent(
-            definitions: [definition],
+            definitions: definitions,
             examples: examples,
             pos: pos,
             pronunciation: pronunciation,
+            headword: headword,
             source: "Merriam-Webster"
         )
     }
 
     private let baseTemplate = """
+    > [!info] posit
+    > //
+
+    ## Sightings
+    - 2026-03-28 — *(context sentence where you saw the word)*
+
     ---
-    captured: 2026-03-26
-    app: Safari
-    pos: ""
-    pronunciation: ""
+
+    ## Meanings
+
+    ### 1. () *()*
+
+    > *()*
+
+    **My sentence:**
+    -
+
+    **Patterns:**
+    - *(common word combinations and grammar patterns)*
+
     ---
 
-    ## Context
-    *(paste the sentence where you saw this word)*
+    ## When to Use
 
-    ## Definition
+    **Where it fits:**
+    **In casual speech:**
 
+    ---
 
-    ## Examples
+    ## Word Family
 
+    *(list related forms, each with a short example)*
 
-    ## Usage
-    **Register:**
-    **Common with:**
+    ---
 
-    ## Word family
-    posit
-    *(add related forms)*
+    ## See Also
+    *(link to other captured words with a note on how they differ)*
 
-    ## Linked words
-    *(other captured words in the same semantic cluster — add [[wikilinks]])*
+    ---
 
-    ## Memory hook
-    *(etymology, mnemonic, or story)*
+    ## Memory Tip
+    *(optional: etymology, mnemonic, personal association — anything that helps you remember)*
     """
 
     // MARK: Happy path
 
-    func testUpdate_templateBody_writesDefinitionPlainText() throws {
+    func testUpdate_fillsCalloutHeadword() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("to assume or affirm the existence of : postulate"))
-        XCTAssertFalse(updated.contains("1. "), "Definition must be plain text, not numbered list")
+        XCTAssertTrue(updated.contains("> [!info] pos·it"))
     }
 
-    func testUpdate_patchesPosInFrontmatter() throws {
-        let url = writeFile(name: "posit.md", content: baseTemplate)
-        try WordPageUpdater.update(at: url.path, with: makeContent(pos: "verb"), lemma: "posit")
-
-        let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("pos: \"verb\""))
-        XCTAssertFalse(updated.contains("pos: \"\""), "Empty pos placeholder must be replaced")
-    }
-
-    func testUpdate_patchesPronunciation() throws {
+    func testUpdate_fillsCalloutPronunciation() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeContent(pronunciation: "pə-ˈzit"), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("pronunciation: \"pə-ˈzit\""))
-        XCTAssertFalse(updated.contains("pronunciation: \"\""), "Empty pronunciation placeholder must be replaced")
+        XCTAssertTrue(updated.contains("> /pə-ˈzit/"))
+        XCTAssertFalse(updated.contains("> //"), "Empty pronunciation placeholder must be replaced")
     }
 
-    func testUpdate_nilPos_frontmatterUnchanged() throws {
+    func testUpdate_nilPronunciation_calloutEmpty() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
-        try WordPageUpdater.update(at: url.path, with: makeContent(pos: nil), lemma: "posit")
+        try WordPageUpdater.update(at: url.path, with: makeContent(pronunciation: nil), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("pos: \"\""), "Nil pos must leave frontmatter unchanged")
+        XCTAssertTrue(updated.contains("> //"), "Nil pronunciation leaves empty slashes")
     }
 
-    func testUpdate_examplesWrittenAsBullets() throws {
+    func testUpdate_nilHeadword_fallsBackToLemma() throws {
+        let url = writeFile(name: "posit.md", content: baseTemplate)
+        try WordPageUpdater.update(at: url.path, with: makeContent(headword: nil), lemma: "posit")
+
+        let updated = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(updated.contains("> [!info] posit"))
+    }
+
+    func testUpdate_singleDefinition_writesNumberedMeaning() throws {
+        let url = writeFile(name: "posit.md", content: baseTemplate)
+        try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
+
+        let updated = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(updated.contains("### 1. (verb) *(to assume or affirm the existence of : postulate)*"))
+        XCTAssertFalse(updated.contains("### 1. () *()*"), "Placeholder must be replaced")
+    }
+
+    func testUpdate_multipleDefinitions_generatesNumberedHeadings() throws {
+        let url = writeFile(name: "posit.md", content: baseTemplate)
+        let content = makeContent(
+            definitions: ["to assume or affirm", "to put forward as a basis of argument"],
+            examples: ["she posited a theory", "he posited that premise"]
+        )
+        try WordPageUpdater.update(at: url.path, with: content, lemma: "posit")
+
+        let updated = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(updated.contains("### 1. (verb) *(to assume or affirm)*"))
+        XCTAssertTrue(updated.contains("### 2. (verb) *(to put forward as a basis of argument)*"))
+        XCTAssertTrue(updated.contains("> *(she posited a theory)*"))
+        XCTAssertTrue(updated.contains("> *(he posited that premise)*"))
+    }
+
+    func testUpdate_exampleInMeaning() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         let content = makeContent(examples: ["philosophers who posit a purely mechanical universe"])
         try WordPageUpdater.update(at: url.path, with: content, lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("- philosophers who posit a purely mechanical universe"))
+        XCTAssertTrue(updated.contains("> *(philosophers who posit a purely mechanical universe)*"))
+    }
+
+    // MARK: Safety: old-format page
+
+    func testUpdate_oldFormatPage_abortsGracefully() throws {
+        let oldTemplate = """
+        ---
+        captured: 2026-03-26
+        app: Safari
+        pos: ""
+        pronunciation: ""
+        ---
+
+        ## Context
+        *(paste the sentence where you saw this word)*
+
+        ## Definition
+
+
+        ## Examples
+
+        """
+        let url = writeFile(name: "posit.md", content: oldTemplate)
+        try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, oldTemplate, "Old-format pages must not be touched")
     }
 
     // MARK: Safety: user already edited
 
-    func testUpdate_userEditedDefinition_abortsWithoutChanging() throws {
+    func testUpdate_userEditedMeaning_abortsWithoutChanging() throws {
         var template = baseTemplate
         template = template.replacingOccurrences(
-            of: "## Definition\n\n\n",
-            with: "## Definition\n\nMy own definition here.\n\n"
+            of: "### 1. () *()*",
+            with: "### 1. (noun) *(my own definition)*"
         )
         let url = writeFile(name: "posit.md", content: template)
         try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
 
         let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("My own definition here."), "User-edited definition must not be overwritten")
-        XCTAssertFalse(after.contains("to assume or affirm"))
-    }
-
-    func testUpdate_userEditedExamples_aborts() throws {
-        var template = baseTemplate
-        template = template.replacingOccurrences(
-            of: "## Examples\n\n\n",
-            with: "## Examples\n\n- my own example sentence\n\n"
-        )
-        let url = writeFile(name: "posit.md", content: template)
-        try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
-
-        let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("my own example sentence"), "User-edited examples must not be overwritten")
+        XCTAssertTrue(after.contains("my own definition"), "User-edited meaning must not be overwritten")
         XCTAssertFalse(after.contains("to assume or affirm"))
     }
 
@@ -604,44 +629,26 @@ final class WordPageUpdaterTests: XCTestCase {
         )
     }
 
-    // MARK: Whitespace-only body (blank lines, trailing newline)
+    // MARK: See Also auto-fill
 
-    func testUpdate_whitespaceyBody_isStillConsideredEmpty() throws {
-        // Template with extra blank lines in sections — should still be treated as empty
-        let url = writeFile(name: "posit.md", content: baseTemplate)
-        try WordPageUpdater.update(at: url.path, with: makeContent(definition: "test value"), lemma: "posit")
-        let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("test value"))
-    }
-
-    // MARK: Linked words auto-fill
-
-    func testUpdate_linkedWordsAutoFilled() throws {
-        // Create a second word file in tempDir so VaultScanner can find it
+    func testUpdate_seeAlsoAutoFilled() throws {
         try "existing content".write(
             to: tempDir.appendingPathComponent("assume.md"),
             atomically: true, encoding: .utf8
         )
         let url = writeFile(name: "posit.md", content: baseTemplate)
 
-        // "assume" appears in the definition text
-        let content = makeContent(definition: "to assume or affirm the existence of : postulate")
-
-        // We need AppSettings.shared.wordsFolderURL to point to tempDir for VaultScanner.
-        // Since we can't inject AppSettings here, verify the section helper behavior directly.
-        // Test VaultScanner in isolation in VaultScannerTests.
-        // Here we just verify the update writes definition and doesn't crash.
+        let content = makeContent(definitions: ["to assume or affirm the existence of : postulate"])
         try WordPageUpdater.update(at: url.path, with: content, lemma: "posit")
         let after = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(after.contains("to assume or affirm the existence of : postulate"))
     }
 
-    func testUpdate_noLinkedWords_placeholderUnchanged() throws {
+    func testUpdate_noRelatedWords_seeAlsoPlaceholderUnchanged() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
-        // Empty vault (no other .md files) — placeholder must remain
         try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
         let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("*(other captured words in the same semantic cluster"))
+        XCTAssertTrue(after.contains("*(link to other captured words with a note on how they differ)*"))
     }
 }
 
