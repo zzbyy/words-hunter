@@ -32,10 +32,10 @@ Format: [version] - YYYY-MM-DD
 
 ### Fixed
 
-- Atomic tmp file writes now use `path.dirname(target)` instead of `os.tmpdir()` — prevents EXDEV errors on iCloud Drive, external volumes, and network mounts
-- `chokidar` moved from `devDependencies` to `dependencies` — was causing production install failures
+- Plugin file writes now work on iCloud Drive, external volumes, and network-mounted vaults — tmp files were previously written to `os.tmpdir()`, causing EXDEV cross-device rename errors
+- Plugin installs correctly in production — `chokidar` (file watcher runtime) was incorrectly listed as a dev dependency and was absent from production installs
 - Word inputs validated at tool entry points to prevent malformed LLM values from polluting mastery.json keys
 - `loadVaultConfig` now checks vault_path exists on disk — returns clear `VAULT_NOT_FOUND` when vault is moved
 - `fireOverdueNudges` checks primary_channel before consuming nudges — nudges no longer silently lost before first user interaction
-- `persistPrimaryChannel` uses atomic write — prevents config.json corruption on process kill
+- Plugin config (`config.json`) is now written atomically — no more corruption if the plugin process is killed mid-write
 - `watcher.ts` restart counter resets after 30s stability window instead of immediately — prevents infinite restart loop on startup crash

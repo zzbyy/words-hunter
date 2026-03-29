@@ -3,7 +3,7 @@
 > **Version**: 1.0
 > **Date**: 2026-03-25
 > **Platform**: macOS 13+ (Ventura and later)
-> **Tech Stack**: Swift 5.9+, AppKit, CoreGraphics (CGEventTap), Swift Package Manager
+> **Tech Stack**: Swift 5.9+, AppKit, CoreGraphics (CGEventTap), Swift Package Manager; TypeScript (OpenClaw plugin), Vitest
 
 ---
 
@@ -19,9 +19,11 @@ Eliminates the context-switching cost of manually creating vocabulary pages. The
 
 ### What This Is NOT
 
-- Not a dictionary app — it does **not** auto-fill definitions
 - Not an Obsidian plugin — it's a standalone system-level app
-- Not cross-platform — macOS only for v1
+- Not cross-platform — macOS only
+
+> **Note (v1.5+):** Words Hunter now auto-fills definitions from the Merriam-Webster API when an API key is configured. See Settings → Dictionary Lookup.
+> **Note (v1.7+):** An OpenClaw TypeScript plugin (`openclaw-plugin/`) adds AI-assisted vocabulary mastery sessions, SRS scheduling, and sighting tracking. See `SCHEMA.md` and `openclaw-plugin/SKILL.md`.
 
 ---
 
@@ -166,31 +168,59 @@ On launch:
 
 Each captured word creates a markdown file. The filename is the word with the first letter capitalized (e.g., `Posit.md`, `Encapsulate.md`).
 
-**Template content**:
+**Template content** (as of v1.6 — Obsidian-native format):
 
 ```markdown
-# {Word}
+> [!info] {Word}
+> //
 
-> 📅 Captured on {YYYY-MM-DD}
+## Sightings
+- {YYYY-MM-DD} — *(context sentence where you saw the word)*
 
-## Definition
+---
 
+## Meanings
 
-## Examples
+### 1. () *()*
 
+> *()*
 
-## Collocations
+**My sentence:**
+-
 
+**Patterns:**
+- *(common word combinations and grammar patterns)*
 
-## Synonyms
+---
 
+## When to Use
+
+**Where it fits:**
+**In casual speech:**
+
+---
+
+## Word Family
+
+*(list related forms, each with a short example)*
+
+---
+
+## See Also
+*(link to other captured words with a note on how they differ)*
+
+---
+
+## Memory Tip
+*(optional: etymology, mnemonic, personal association — anything that helps you remember)*
 ```
 
 Where:
-- `{Word}` = captured word with first letter capitalized
+- `{Word}` = captured word with first letter capitalized (also used as the filename, e.g. `Posit.md`)
 - `{YYYY-MM-DD}` = date of capture (local timezone)
+- The `> [!info]` callout renders as an Obsidian info block with the word as the title
 
-The sections are intentionally left empty for the user to fill in manually during study sessions.
+The sections are intentionally left partially empty for the user to fill in during study sessions. The OpenClaw mastery plugin (v1.7+) appends a `> [!mastery]` callout and `### Best Sentences` section as the user works through sessions.
 
 ---
 
@@ -202,20 +232,37 @@ The sections are intentionally left empty for the user to fill in manually durin
 Words Hunter/
 ├── Package.swift                          # SPM manifest (macOS 13+, no dependencies)
 ├── Sources/
+│   ├── WordsHunterLib/                    # Library target (testable)
+│   │   ├── Core/
+│   │   │   ├── EventMonitor.swift         # CGEventTap for Option+double-click
+│   │   │   ├── TextCapture.swift          # Pasteboard-based word capture
+│   │   │   ├── WordPageCreator.swift      # Markdown file creation
+│   │   │   ├── WordPageUpdater.swift      # Atomic definition injection
+│   │   │   ├── DictionaryService.swift    # MW API fetch + retry
+│   │   │   └── VaultScanner.swift         # Vault file enumeration
+│   │   ├── UI/
+│   │   │   ├── StatusBarController.swift  # Menu bar icon and menu
+│   │   │   ├── SetupWindow.swift          # First-run configuration window
+│   │   │   └── BubbleWindow.swift         # Floating bubble animation
+│   │   └── Models/
+│   │       └── AppSettings.swift          # UserDefaults wrapper + config bridge export
 │   └── WordsHunter/
-│       ├── main.swift                     # Entry point: NSApplication bootstrap
-│       ├── App/
-│       │   └── AppDelegate.swift          # App lifecycle, permission checks
-│       ├── Core/
-│       │   ├── EventMonitor.swift         # CGEventTap for Option+double-click
-│       │   ├── TextCapture.swift          # Pasteboard-based word capture
-│       │   └── WordPageCreator.swift      # Markdown file creation
-│       ├── UI/
-│       │   ├── StatusBarController.swift  # Menu bar icon and menu
-│       │   ├── SetupWindow.swift          # First-run configuration window
-│       │   └── BubbleWindow.swift         # Floating bubble animation
-│       └── Models/
-│           └── AppSettings.swift          # UserDefaults wrapper
+│       └── main.swift                     # Entry point: NSApplication bootstrap + AppDelegate
+├── openclaw-plugin/                       # TypeScript OpenClaw vocabulary mastery plugin
+│   ├── src/
+│   │   ├── index.ts                       # Plugin entry point (tools, crons, hooks)
+│   │   ├── vault.ts                       # Vault I/O, mastery.json R/W, validateWord
+│   │   ├── types.ts                       # ToolResult<T> discriminated union
+│   │   ├── srs/scheduler.ts               # Leitner SRS (5 boxes, 85-point threshold)
+│   │   ├── tools/                         # scan_vault, load_word, record_mastery, …
+│   │   ├── hooks/sighting-hook.ts         # Outgoing message sighting detection
+│   │   └── importer.ts                    # One-time import of untracked word pages
+│   ├── tests/                             # Vitest unit tests (69 tests, 11 files)
+│   ├── SKILL.md                           # OpenClaw agent conversation flow spec
+│   └── package.json
+├── SCHEMA.md                              # Schema contract: mastery.json, config.json, callouts
+├── CHANGELOG.md                           # Version history
+├── TODOS.md                               # Deferred work and sprint backlog
 ├── scripts/
 │   ├── build.sh                           # Build + create .app bundle
 │   └── run.sh                             # Quick development run
@@ -343,14 +390,18 @@ The bubble should feel **cute and delightful** — a small reward for capturing 
 
 ---
 
-## 8. Future Considerations (v2 — NOT in scope for v1)
+## 8. Future Considerations and Shipped Extensions
 
-These are explicitly out of scope but documented for future reference:
+Features originally deferred from v1, now tracked in `TODOS.md`:
 
-- **Surrounding sentence capture**: Grab the sentence around the word as context (works well in Chrome/Books, unreliable in terminals)
-- **Auto-dictionary lookup**: Look up definitions via a dictionary API and pre-fill the Definition section
-- **Word count stats**: Track how many words captured this week/month, show in menu bar
-- **Configurable modifier key**: Let users change from Option to Ctrl or other modifiers
-- **Configurable template**: Let users customize the markdown template
-- **Launch at login**: Option to auto-start when macOS boots
-- **Obsidian URI integration**: Open the created page in Obsidian immediately after capture (via `obsidian://` URL scheme)
+**Shipped:**
+- **Auto-dictionary lookup** (v1.5) — MW API integration with exponential backoff, Keychain storage, rate-limit handling
+- **OpenClaw mastery plugin** (v1.7) — TypeScript plugin: 6 tools, Leitner SRS, sighting hook, SKILL.md agent flow
+
+**Still deferred (see TODOS.md for details):**
+- **AXUIElement sentence capture** — grab the sentence around the word at capture time (P3)
+- **Collins Dictionary support** — second definition source via scraping (P2, waiting for official API)
+- **Word count stats** — how many words captured this week/month in menu bar
+- **Configurable modifier key** — change from Option to Ctrl or other modifiers
+- **Launch at login** — auto-start when macOS boots
+- **Obsidian URI integration** — open the created page in Obsidian immediately after capture
