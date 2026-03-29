@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { ToolResult, ToolError, VaultConfig, MasteryStore, NudgeQueue, ok, err } from './types.js';
 
 // ============================================================
@@ -31,10 +30,39 @@ export async function loadVaultConfig(vaultRoot: string): Promise<ToolResult<Vau
     return err({ code: 'VAULT_NOT_FOUND', message: 'config.json is missing vault_path' });
   }
 
+  const vaultPath = obj['vault_path'] as string;
+  try {
+    await fs.access(vaultPath);
+  } catch {
+    return err({ code: 'VAULT_NOT_FOUND', message: `vault_path '${vaultPath}' does not exist on disk. Has the vault been moved?` });
+  }
+
   return ok({
-    vault_path: obj['vault_path'] as string,
+    vault_path: vaultPath,
     words_folder: typeof obj['words_folder'] === 'string' ? obj['words_folder'] : '',
   });
+}
+
+// ============================================================
+// Input validation
+// ============================================================
+
+/** Valid word: letters, digits, apostrophes, hyphens, spaces — max 50 chars. */
+const WORD_PATTERN = /^[a-z0-9][a-z0-9'\- ]{0,49}$/i;
+
+/**
+ * Validate that a word string from LLM tool input is safe to use as a file
+ * name and mastery.json key. Rejects path traversal, empty strings, and
+ * excessively long values before any I/O occurs.
+ */
+export function validateWord(word: string): ToolError | null {
+  if (!word || typeof word !== 'string') {
+    return { code: 'INVALID_INPUT', message: 'word must be a non-empty string', field: 'word' };
+  }
+  if (!WORD_PATTERN.test(word)) {
+    return { code: 'INVALID_INPUT', message: `Invalid word format: '${word}'. Words must contain only letters, digits, apostrophes, hyphens, and spaces (max 50 chars).`, field: 'word' };
+  }
+  return null;
 }
 
 // ============================================================
@@ -109,7 +137,7 @@ export async function writeMasteryStore(
   store: MasteryStore,
 ): Promise<ToolResult<void>> {
   const dir = path.dirname(jsonPath);
-  const tmp = path.join(os.tmpdir(), `mastery-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  const tmp = path.join(dir, `.wh-mastery-${Date.now()}-${Math.random().toString(36).slice(2)}.json.tmp`);
   try {
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(tmp, JSON.stringify(store, null, 2), 'utf8');
@@ -140,7 +168,7 @@ export async function writeNudgeQueue(
   queue: NudgeQueue,
 ): Promise<ToolResult<void>> {
   const dir = path.dirname(queuePath);
-  const tmp = path.join(os.tmpdir(), `nudges-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  const tmp = path.join(dir, `.wh-nudges-${Date.now()}-${Math.random().toString(36).slice(2)}.json.tmp`);
   try {
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(tmp, JSON.stringify(queue, null, 2), 'utf8');
