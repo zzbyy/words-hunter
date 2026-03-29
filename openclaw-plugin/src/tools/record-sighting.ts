@@ -1,8 +1,7 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { ToolResult, VaultConfig, ok, err } from '../types.js';
-import { wordsFolderPath, assertInVault } from '../vault.js';
+import { wordsFolderPath, assertInVault, validateWord } from '../vault.js';
 
 export interface RecordSightingInput {
   word: string;
@@ -20,6 +19,9 @@ export async function recordSighting(
   config: VaultConfig,
   input: RecordSightingInput,
 ): Promise<ToolResult<void>> {
+  const wordErr = validateWord(input.word);
+  if (wordErr) return { ok: false, error: wordErr };
+
   const wordLower = input.word.toLowerCase();
   const wordsDir = wordsFolderPath(config);
   const mdPath = path.join(wordsDir, `${wordLower}.md`);
@@ -62,7 +64,12 @@ export async function recordSighting(
     }
   }
 
-  const tmp = path.join(os.tmpdir(), `wh-sighting-${wordLower}-${Date.now()}.md`);
+  // Use same directory as target to guarantee same-filesystem rename.
+  // Random suffix prevents concurrent-test tmp filename collisions.
+  const tmp = path.join(
+    path.dirname(mdPath),
+    `.wh-sighting-${wordLower}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
+  );
   try {
     await fs.writeFile(tmp, updated, 'utf8');
     await fs.rename(tmp, mdPath);

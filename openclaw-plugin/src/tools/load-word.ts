@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ToolResult, VaultConfig, WordEntry, ok, err } from '../types.js';
-import { masteryJsonPath, wordsFolderPath, assertInVault, readMasteryStore } from '../vault.js';
+import { masteryJsonPath, wordsFolderPath, assertInVault, readMasteryStore, validateWord } from '../vault.js';
 
 export interface LoadWordResult {
   word: string;
@@ -19,6 +19,9 @@ export async function loadWord(
   config: VaultConfig,
   word: string,
 ): Promise<ToolResult<LoadWordResult>> {
+  const inputErr = validateWord(word);
+  if (inputErr) return { ok: false, error: inputErr };
+
   const wordLower = word.toLowerCase();
   const wordsDir = wordsFolderPath(config);
   const mdPath = path.join(wordsDir, `${wordLower}.md`);

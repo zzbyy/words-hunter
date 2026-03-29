@@ -112,6 +112,19 @@ async function fireOverdueNudges(
   config: VaultConfig,
   ctx: PluginContext,
 ): Promise<void> {
+  // Only fire nudges if primary_channel is configured — otherwise leave them queued
+  // (primary_channel is set on first user interaction; the cron may fire before that)
+  const path = await import('node:path');
+  const fs = await import('node:fs/promises');
+  const configPath = path.join(config.vault_path, '.wordshunter', 'config.json');
+  try {
+    const raw = await fs.readFile(configPath, 'utf8');
+    const obj = JSON.parse(raw);
+    if (!obj.primary_channel) return;  // not yet set — leave nudges for next cycle
+  } catch {
+    return;  // config unreadable — don't consume nudges
+  }
+
   const queuePath = nudgeQueuePath(config);
   const queue = await readNudgeQueue(queuePath);
   if (queue.nudges.length === 0) return;
@@ -143,16 +156,19 @@ async function persistPrimaryChannel(
   config: { vault_path: string; words_folder: string },
   channelId: string,
 ): Promise<void> {
-  // Merge primary_channel into config.json (not overwriting vault_path/words_folder)
+  // Merge primary_channel into config.json atomically (tmp+rename)
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
-  const configPath = path.join(config.vault_path, '.wordshunter', 'config.json');
+  const dir = path.join(config.vault_path, '.wordshunter');
+  const configPath = path.join(dir, 'config.json');
   try {
     const raw = await fs.readFile(configPath, 'utf8');
     const obj = JSON.parse(raw);
     if (!obj.primary_channel) {
       obj.primary_channel = channelId;
-      await fs.writeFile(configPath, JSON.stringify(obj, null, 2), 'utf8');
+      const tmp = path.join(dir, `.wh-config-${Date.now()}.json.tmp`);
+      await fs.writeFile(tmp, JSON.stringify(obj, null, 2), 'utf8');
+      await fs.rename(tmp, configPath);
     }
   } catch { /* best effort */ }
 }

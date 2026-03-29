@@ -10,7 +10,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { VaultConfig, WordEntry, MasteryStore } from './types.js';
 import { masteryJsonPath, wordsFolderPath, readMasteryStore, writeMasteryStore } from './vault.js';
-import { todayString, addDays } from './srs/scheduler.js';
+import { todayString } from './srs/scheduler.js';
 
 export async function importUntracked(config: VaultConfig): Promise<{ imported: string[] }> {
   const wordsDir = wordsFolderPath(config);

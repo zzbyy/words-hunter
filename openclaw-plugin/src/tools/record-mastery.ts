@@ -1,8 +1,7 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { ToolResult, VaultConfig, WordEntry, BestSentence, ok, err } from '../types.js';
-import { masteryJsonPath, wordsFolderPath, assertInVault, readMasteryStore, writeMasteryStore } from '../vault.js';
+import { masteryJsonPath, wordsFolderPath, assertInVault, readMasteryStore, writeMasteryStore, validateWord } from '../vault.js';
 import { advance, todayString, MASTERY_THRESHOLD } from '../srs/scheduler.js';
 import { upsertCallout } from '../callout-renderer.js';
 
@@ -36,7 +35,10 @@ export async function recordMastery(
   config: VaultConfig,
   input: RecordMasteryInput,
 ): Promise<ToolResult<RecordMasteryResult>> {
-  // Validate score
+  // Validate inputs
+  const wordErr = validateWord(input.word);
+  if (wordErr) return { ok: false, error: wordErr };
+
   if (typeof input.score !== 'number' || !isFinite(input.score)) {
     return err({ code: 'NaN_SCORE', message: `Invalid score: ${input.score}`, field: 'score' });
   }
@@ -96,8 +98,9 @@ export async function recordMastery(
   try {
     let content = await fs.readFile(mdPath, 'utf8');
 
-    // Append history line
-    const historyLine = `- ${today}: box ${currentBox}→${box}, score ${score}, sentences: ${bestSentences.length}`;
+    // Append history line (sentences = 1 if a sentence was saved this session, 0 otherwise)
+    const sentencesThisSession = (input.best_sentence && score >= MASTERY_THRESHOLD) ? 1 : 0;
+    const historyLine = `- ${today}: box ${currentBox}→${box}, score ${score}, sentences: ${sentencesThisSession}`;
     const historyRegex = /^### History\n/m;
     if (historyRegex.test(content)) {
       content = content.replace(historyRegex, `### History\n${historyLine}\n`);
@@ -119,7 +122,10 @@ export async function recordMastery(
     content = upsertCallout(content, updatedEntry);
 
     // Write .md atomically
-    const tmp = path.join(os.tmpdir(), `wh-${wordLower}-${Date.now()}.md`);
+    const tmp = path.join(
+      path.dirname(mdPath),
+      `.wh-mastery-${wordLower}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
+    );
     await fs.writeFile(tmp, content, 'utf8');
     await fs.rename(tmp, mdPath);
   } catch {

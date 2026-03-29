@@ -62,7 +62,9 @@ export async function startWatcher(
       void handleCrash();
     });
 
-    restartCount = 0;  // successful launch resets counter
+    // Reset restart counter only after 30s of stable operation
+    // (immediate-crash loop would reset it at call-start before any events)
+    setTimeout(() => { restartCount = 0; }, 30_000);
   }
 
   async function handleCrash(): Promise<void> {
