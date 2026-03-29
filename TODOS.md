@@ -79,6 +79,127 @@
 
 ---
 
+## OpenClaw integration — agent mastery (v2.0 scope)
+
+See CEO plan: `~/.gstack/projects/zzbyy-words-hunter/ceo-plans/2026-03-29-agent-mastery.md`
+
+### Config bridge — macOS app exports vault config (P1)
+**What:** When the user saves settings in Words Hunter, the app also writes `.wordshunter/config.json` to the vault root containing `vault_path` and `words_folder`. The TypeScript OpenClaw plugin reads this file to discover the vault — it has no other way to find it (vault path lives in macOS UserDefaults, inaccessible to Node.js).
+**Why:** Without this, the plugin can't locate the vault and no tools work. P1 blocker before any integration can run.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P1
+**Completed:** v1.7.0.0 (2026-03-29)
+
+---
+
+### PowerMem evaluation — SRS decision gate (P1 spike, week 1)
+**What:** Evaluate the PowerMem OpenClaw plugin before implementing a custom SRS scheduler. Adopt if: (a) TypeScript SDK available, (b) API can drive `next_review` dates from our `.wordshunter/mastery.json` (not PowerMem's own store), (c) Ebbinghaus intervals are configurable. If any condition fails → build custom Leitner scheduler (5 boxes: 1d, 3d, 7d, 14d, 30d).
+**Why:** PowerMem may be free complexity elimination. Decision gate is week 1 — do not build scheduler until this check is done.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P1
+**Completed:** v1.7.0.0 (2026-03-29) — PowerMem conditions failed (no TS SDK, can't drive our mastery.json). Built custom Leitner scheduler (`src/srs/scheduler.ts`, 5 boxes: 1d/3d/7d/14d/30d).
+
+---
+
+### Session timeout handling in SKILL.md
+**What:** Define what happens when the user starts a mastery session and stops replying mid-way. Suggested behavior: after 60 min no reply, agent sends "Session paused — resume with /vocab when you're ready" and saves partial progress to mastery.json.
+**Why:** Without a timeout, the session is left hanging and the agent has no graceful exit path.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2
+**Completed:** v1.7.0.0 (2026-03-29) — SKILL.md shipped with 60-min idle timeout and resume flow.
+
+---
+
+### Sighting hook — word-boundary regex
+**What:** The sighting detection hook must use `\b{word}\b` (case-insensitive word-boundary regex) when scanning outgoing messages. Without this, "posit" would match inside "positive", "deposition", etc., causing false positive sightings.
+**Why:** Substring matches produce junk sightings data. Word-boundary matching is correct.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P1 (implement at sighting-hook.ts creation time)
+**Completed:** v1.7.0.0 (2026-03-29) — `sighting-hook.ts` uses `new RegExp('\\b' + escapeRegex(word) + '\\b', 'i')` for all word matches.
+
+---
+
+### NaN score guard in record_mastery
+**What:** Before writing to mastery.json, `record_mastery` must validate all score fields are numbers within valid range (0–100). On invalid or missing LLM response: log a warning, skip the score update, and surface an error to the agent for retry.
+**Why:** If the LLM returns malformed JSON or missing fields, unchecked math produces `NaN` in mastery.json, corrupting the SRS state permanently.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P1 (implement at record_mastery creation time)
+**Completed:** v1.7.0.0 (2026-03-29) — `record_mastery` validates `typeof score === 'number' && score >= 0 && score <= 100`; returns `NaN_SCORE` error on invalid input.
+
+---
+
+### Watcher error handling — chokidar crash recovery
+**What:** `watcher.ts` must catch chokidar errors and attempt a restart with exponential backoff. If restart fails 3 times, log a persistent warning to the agent channel so the failure is visible.
+**Why:** A silently dead watcher means no 24h nudges fire. The user would never know captures stopped being tracked.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2
+**Completed:** v1.7.0.0 (2026-03-29) — `watcher.ts` has exponential backoff (1s/2s/4s), 3-restart limit, channel alert on permanent failure. Restart counter resets after 30s stability window.
+
+---
+
+### Graduation celebration — LLM response guards
+**What:** The graduation LLM call must validate: response is non-empty, contains the graduated word, and is under 200 chars. On failure: retry once, then fall back to a templated message ("You've mastered '{word}'!") rather than sending garbage to the channel.
+**Why:** LLMs occasionally refuse, hallucinate off-topic text, or return empty strings. The celebration moment shouldn't break silently.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2
+
+---
+
+### Vault path traversal validation
+**What:** All plugin file operations must verify the resolved path starts with the configured vault root before reading or writing. Throw a `VAULT_ESCAPE` error if any path escapes the vault. Relevant because `.wordshunter/config.json` could theoretically be misconfigured with a path like `../../etc/passwd`.
+**Why:** Defense-in-depth. The config is user-controlled but could be corrupted or tampered.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2
+**Completed:** v1.7.0.0 (2026-03-29) — `assertInVault()` in `vault.ts` uses `path.resolve()` then checks `resolvedPath.startsWith(resolvedVault + path.sep)`; called by all 4 write tools.
+
+---
+
+### mastery.json concurrent write race (P1)
+**What:** If two sessions score the same word simultaneously (e.g., user opens a second chat window mid-session), both read the same mastery.json state, compute independently, and the second `writeMasteryStore` silently overwrites the first. The earlier session's progress is lost.
+**Why:** Atomic rename prevents file corruption but not lost-update races at the application level. With single-user CLI usage this is rare, but it becomes probable when the sighting hook fires during an active session.
+**Cons:** Full fix requires a file lock (e.g., `proper-lockfile`) or a read-modify-write CAS loop. Either adds a runtime dependency or retry complexity.
+**Context:** Found in adversarial review (v1.7.0.0). Blast radius is small (one session's score lost, next session will re-score), but the failure is silent.
+**Effort:** S (human) → XS (CC+gstack)
+**Priority:** P1
+
+---
+
+### Sighting hook — serial O(N) file writes
+**What:** When the user sends a message containing 10 captured words, the sighting hook fires 10 sequential read-modify-write cycles on 10 different `.md` files. Each is individually safe, but under heavy load (user pastes a paragraph with many vocabulary words) this creates a write storm on the vault.
+**Why:** Sequential writes are predictable and correct but slow for batch scenarios. A short debounce or batch queue would coalesce writes within a single message into one pass.
+**Cons:** Adds batching complexity. Low priority because most messages contain 0-1 matching words.
+**Context:** Found in adversarial review (v1.7.0.0). Not a correctness bug, purely a performance concern.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2
+
+---
+
+### Importer — non-word .md file ingestion
+**What:** `importer.ts` scans the words folder for all `.md` files and creates mastery entries for each. If the vault contains Obsidian templates, MOCs (Maps of Content), or system files like `_index.md` in the words folder, they get imported as vocabulary words, polluting mastery.json with invalid entries.
+**Why:** The importer assumes all `.md` files in the words folder are word pages. A filename filter (e.g., skip files starting with `_` or containing `/`) would prevent accidental ingestion.
+**Cons:** Filtering heuristics may miss edge cases. A more robust fix is to check for the `> [!info]` callout that all real word pages contain.
+**Context:** Found in adversarial review (v1.7.0.0). Low blast radius — invalid entries have no word page to load_word against, but they pollute scan_vault output.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2
+
+---
+
+### `words-hunter repair` command — regenerate callouts from JSON
+**What:** CLI command that walks `.wordshunter/mastery.json` and regenerates the `> [!mastery]` callout in each `.md` word page from JSON state. Needed when Obsidian sync corrupts or overwrites the derived callout display.
+**Why:** The callout is now a derived view — if it drifts from the JSON, the user sees stale data in Obsidian. Repair restores consistency without manual editing.
+**Effort:** S (human) → XS (CC+gstack)
+**Priority:** P2
+
+---
+
+### README — privacy note for sighting hook
+**What:** README must include a privacy section explaining: the sighting hook scans your own outgoing messages locally; only the matched word + timestamp is stored in the `.md` file; nothing is sent to external servers.
+**Why:** The hook reads every outgoing message across all connected channels. Users deserve to know this up front.
+**Effort:** XS (human) → XS (CC+gstack)
+**Priority:** P2 (write before ClawHub publish)
+
+---
+
 ## Implementation plan — v1.5 (current sprint)
 
 See CEO plan: `~/.gstack/projects/words-hunter/ceo-plans/2026-03-25-dictionary-lookup.md`
