@@ -290,11 +290,11 @@ final class WordPageCreatorTests: XCTestCase {
         XCTAssertEqual(lemma.lowercased() + ".md", expected)
     }
 
-    func testCreatePage_calloutBlock() {
+    func testCreatePage_headerLine() {
         let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
         let content = makeTemplate(lemma: "posit", date: dateString)
-        XCTAssertTrue(content.contains("> [!info] posit"))
-        XCTAssertTrue(content.contains("> //"))
+        XCTAssertTrue(content.contains("# posit"))
+        XCTAssertTrue(content.contains("**Syllables:**"))
     }
 
     func testCreatePage_sightingsWithDate() {
@@ -325,11 +325,10 @@ final class WordPageCreatorTests: XCTestCase {
         XCTAssertFalse(content.contains("pronunciation: \"\""))
     }
 
-    func testCreatePage_noWordHeading() {
+    func testCreatePage_hasWordHeading() {
         let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
         let content = makeTemplate(lemma: "posit", date: dateString)
-        XCTAssertFalse(content.hasPrefix("# "), "Template must not start with a word heading")
-        XCTAssertFalse(content.contains("\n# "), "Template must not contain a word heading")
+        XCTAssertTrue(content.hasPrefix("# posit"), "Template must start with word heading")
     }
 
     func testCreatePage_recapture_returnsSkipped() throws {
@@ -350,8 +349,9 @@ final class WordPageCreatorTests: XCTestCase {
     // Helper that reproduces the template string from WordPageCreator
     private func makeTemplate(lemma: String, date: String) -> String {
         """
-        > [!info] \(lemma)
-        > //
+        # \(lemma)
+
+        **Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
 
         ## Sightings
         - \(date) — *(context sentence where you saw the word)*
@@ -365,7 +365,7 @@ final class WordPageCreatorTests: XCTestCase {
         > *()*
 
         **My sentence:**
-        -
+        - *(write your own sentence using this word)*
 
         **Patterns:**
         - *(common word combinations and grammar patterns)*
@@ -461,8 +461,9 @@ final class WordPageUpdaterTests: XCTestCase {
     }
 
     private let baseTemplate = """
-    > [!info] posit
-    > //
+    # posit
+
+    **Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
 
     ## Sightings
     - 2026-03-28 — *(context sentence where you saw the word)*
@@ -476,7 +477,7 @@ final class WordPageUpdaterTests: XCTestCase {
     > *()*
 
     **My sentence:**
-    -
+    - *(write your own sentence using this word)*
 
     **Patterns:**
     - *(common word combinations and grammar patterns)*
@@ -507,29 +508,29 @@ final class WordPageUpdaterTests: XCTestCase {
 
     // MARK: Happy path
 
-    func testUpdate_fillsCalloutHeadword() throws {
+    func testUpdate_fillsSyllables() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("> [!info] pos·it"))
+        XCTAssertTrue(updated.contains("**Syllables:** pos·it"))
     }
 
-    func testUpdate_fillsCalloutPronunciation() throws {
+    func testUpdate_fillsPronunciation() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeContent(pronunciation: "pə-ˈzit"), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("> /pə-ˈzit/"))
-        XCTAssertFalse(updated.contains("> //"), "Empty pronunciation placeholder must be replaced")
+        XCTAssertTrue(updated.contains("**Pronunciation:** /pə-ˈzit/"))
+        XCTAssertFalse(updated.contains("*(e.g. /ˈpɒz.ɪt/)*"), "Placeholder must be replaced")
     }
 
-    func testUpdate_nilPronunciation_calloutEmpty() throws {
+    func testUpdate_nilPronunciation_emptyDisplay() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeContent(pronunciation: nil), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("> //"), "Nil pronunciation leaves empty slashes")
+        XCTAssertTrue(updated.contains("**Syllables:** pos·it · **Pronunciation:** "))
     }
 
     func testUpdate_nilHeadword_fallsBackToLemma() throws {
@@ -537,7 +538,7 @@ final class WordPageUpdaterTests: XCTestCase {
         try WordPageUpdater.update(at: url.path, with: makeContent(headword: nil), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("> [!info] posit"))
+        XCTAssertTrue(updated.contains("**Syllables:** posit"))
     }
 
     func testUpdate_singleDefinition_writesNumberedMeaning() throws {

@@ -92,6 +92,12 @@ final class SetupViewController: NSViewController {
         return b
     }()
 
+    private lazy var editTemplateBtn: NSButton = {
+        let b = NSButton(title: "Edit Word Template…", target: self, action: #selector(editTemplate))
+        b.bezelStyle = .rounded
+        return b
+    }()
+
     private let statusLabel: NSTextField = {
         let f = NSTextField(labelWithString:
             "Requires Accessibility permission to detect Option+double-click.")
@@ -209,7 +215,7 @@ final class SetupViewController: NSViewController {
                                              bottom: margin, right: margin)
         outerStack.translatesAutoresizingMaskIntoConstraints = false
 
-        for v in [introLabel, vaultBox, locationBox, lookupBox, statusLabel, startBtn] {
+        for v in [introLabel, vaultBox, locationBox, lookupBox, editTemplateBtn, statusLabel, startBtn] {
             outerStack.addArrangedSubview(v)
         }
 
@@ -271,6 +277,16 @@ final class SetupViewController: NSViewController {
 
     @objc private func openApiKeyLink() {
         NSWorkspace.shared.open(URL(string: "https://dictionaryapi.com/register/index.htm")!)
+    }
+
+    @objc private func editTemplate() {
+        let vaultPath = vaultPathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !vaultPath.isEmpty else { showAlert("Set your words directory first."); return }
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: vaultPath)
+        let templateURL = URL(fileURLWithPath: vaultPath)
+            .appendingPathComponent(".wordshunter")
+            .appendingPathComponent("template.md")
+        NSWorkspace.shared.open(templateURL)
     }
 
     @objc private func startHunting() {

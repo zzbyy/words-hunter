@@ -5,6 +5,62 @@ import { wordsFolderPath, validateWord, assertInVault } from '../vault.js';
 import { masteryJsonPath, readMasteryStore, writeMasteryStore } from '../vault.js';
 import { todayString } from '../srs/scheduler.js';
 
+const DEFAULT_TEMPLATE = `# {{word}}
+
+**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+
+## Sightings
+- {{date}} — *(context sentence where you saw the word)*
+
+---
+
+## Meanings
+
+### 1. () *()*
+
+> *()*
+
+**My sentence:**
+- *(write your own sentence using this word)*
+
+**Patterns:**
+- *(common word combinations and grammar patterns)*
+
+---
+
+## When to Use
+
+**Where it fits:**
+**In casual speech:**
+
+---
+
+## Word Family
+
+*(list related forms, each with a short example)*
+
+---
+
+## See Also
+*(link to other captured words with a note on how they differ)*
+
+---
+
+## Memory Tip
+*(optional: etymology, mnemonic, personal association — anything that helps you remember)*`;
+
+async function loadTemplate(config: VaultConfig, word: string, date: string): Promise<string> {
+  const templatePath = path.join(config.vault_path, '.wordshunter', 'template.md');
+  let raw = DEFAULT_TEMPLATE;
+  try {
+    const custom = await fs.readFile(templatePath, 'utf8');
+    if (custom.trim()) raw = custom;
+  } catch { /* file missing — use default */ }
+  return raw
+    .replaceAll('{{word}}', word)
+    .replaceAll('{{date}}', date);
+}
+
 /**
  * create_word — create a new word page and add it to mastery.json.
  *
@@ -35,53 +91,9 @@ export async function createWord(
   // Create the words folder if needed
   await fs.mkdir(wordsDir, { recursive: true });
 
-  // Write blank page template
+  // Load template from .wordshunter/template.md, fall back to hardcoded default
   const today = todayString();
-  const template = [
-    `# ${word}`,
-    '',
-    '**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*',
-    '',
-    '## Sightings',
-    `- ${today} — *(context sentence where you saw the word)*`,
-    '',
-    '---',
-    '',
-    '## Meanings',
-    '',
-    '### 1. () *()*',
-    '',
-    '> *()*',
-    '',
-    '**My sentence:**',
-    '- *(write your own sentence using this word)*',
-    '',
-    '**Patterns:**',
-    '- *(common word combinations and grammar patterns)*',
-    '',
-    '---',
-    '',
-    '## When to Use',
-    '',
-    '**Where it fits:**',
-    '**In casual speech:**',
-    '',
-    '---',
-    '',
-    '## Word Family',
-    '',
-    '*(list related forms, each with a short example)*',
-    '',
-    '---',
-    '',
-    '## See Also',
-    '*(link to other captured words with a note on how they differ)*',
-    '',
-    '---',
-    '',
-    '## Memory Tip',
-    '*(optional: etymology, mnemonic, personal association — anything that helps you remember)*',
-  ].join('\n');
+  const template = await loadTemplate(config, word, today);
 
   const tmp = path.join(wordsDir, `.wh-create-${Date.now()}.md.tmp`);
   try {
