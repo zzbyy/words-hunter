@@ -39,7 +39,19 @@ export async function scanVault(
     return ok(newWords);
   }
 
-  const entries = Object.values(store.words);
+  // Filter out words whose .md page has been deleted.
+  // One readdir() builds a Set — O(1) lookup per word instead of N fs.access() calls.
+  const wordsDir = wordsFolderPath(config);
+  let existingFiles: Set<string>;
+  try {
+    const files = await fs.readdir(wordsDir);
+    existingFiles = new Set(files.filter(f => f.endsWith('.md')).map(f => f.toLowerCase()));
+  } catch {
+    existingFiles = new Set(); // words folder missing — treat all as deleted
+  }
+  const entries = Object.values(store.words).filter(
+    e => existingFiles.has(`${e.word.toLowerCase()}.md`)
+  );
 
   if (filter === 'due') {
     const due = entries

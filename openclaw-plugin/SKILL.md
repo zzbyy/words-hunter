@@ -161,6 +161,8 @@ not on messages you receive.
 | Command | Response |
 |---------|----------|
 | `/vocab` | Start session for due words |
+| `/hunt <word>` | Capture a word directly from chat (no macOS app needed) |
+| `add the word <word>` | Same as `/hunt` — calls `create_word` tool |
 | `show my words` | Vault summary (total, mastered, reviewing, learning, due) |
 | `vocab status` | Same as "show my words" |
 | `how many words do I have` | Same as "show my words" |
@@ -168,3 +170,17 @@ not on messages you receive.
 `vault_summary` is called for all summary commands. Format:
 > You have **{total}** words: {mastered} mastered, {reviewing} reviewing, {learning} learning.
 > {due_today} due today. Last session: {last_session or 'never'}.
+
+### Adding words from chat
+
+Two ways to add a word without the macOS app:
+
+1. **Slash command** (handled by the message hook, no agent reasoning needed):
+   > `/hunt ephemeral`
+
+2. **Natural language** (agent calls `create_word` tool):
+   > "add the word posit"
+   > "I want to study ephemeral"
+   > "capture the word liminal"
+
+Both create the word page in the correct words directory and register it in `mastery.json` (box 1, due today). If the page already exists, a `FILE_EXISTS` message is returned instead of overwriting.

@@ -43,6 +43,11 @@ describe('vault_summary', () => {
         },
       };
       await writeFile(join(vaultPath, '.wordshunter', 'mastery.json'), JSON.stringify(store), 'utf8');
+      // .md files must exist for words to be counted
+      await mkdir(join(vaultPath, 'Words'), { recursive: true });
+      for (const word of Object.keys(store.words)) {
+        await writeFile(join(vaultPath, 'Words', `${word}.md`), `# ${word}`, 'utf8');
+      }
 
       const result = await vaultSummary(config, TODAY);
       expect(result.ok).toBe(true);

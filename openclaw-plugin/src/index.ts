@@ -28,6 +28,7 @@ import { updatePage } from './tools/update-page.js';
 import { recordSighting } from './tools/record-sighting.js';
 import { vaultSummary } from './tools/vault-summary.js';
 import { onOutgoingMessage } from './hooks/sighting-hook.js';
+import { createWord } from './tools/create-word.js';
 import { startWatcher } from './watcher.js';
 
 /** Wrap any ToolResult into the AgentToolResult format OpenClaw expects. */
@@ -199,6 +200,21 @@ export default definePluginEntry({
     });
 
     api.registerTool({
+      name: 'create_word',
+      label: 'Create Word',
+      description: "Create a new word page in the Words Hunter vault and register it for study. Use this when the user wants to manually add a word they didn't capture via the macOS app.",
+      parameters: Type.Object({
+        word: Type.String({ description: 'The word to add (e.g. "ephemeral")' }),
+      }),
+      async execute(_id, params) {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await createWord(configResult.data, params);
+        return toAgentResult(result) as never;
+      },
+    });
+
+    api.registerTool({
       name: 'vault_summary',
       label: 'Vault Summary',
       description: 'Get aggregate stats for the Words Hunter vault: total words, mastery breakdown (mastered/reviewing/learning), due count, and last session date.',
@@ -211,11 +227,25 @@ export default definePluginEntry({
       },
     });
 
-    // --- Sighting hook ---
-    // Fires when the user sends a message. Scans for captured words and logs sightings.
+    // --- Message hook ---
+    // Handles /hunt <word> slash command and scans for in-the-wild sightings.
     api.on('message_received', async (event, ctx) => {
       const configResult = await configPromise;
       if (!configResult.ok) return;
+
+      // /hunt <word> — create a word page directly from chat
+      const huntMatch = event.content.trim().match(/^\/hunt\s+(.+)$/i);
+      if (huntMatch) {
+        const word = huntMatch[1].trim().toLowerCase();
+        const result = await createWord(configResult.data, { word });
+        if (result.ok) {
+          api.logger.info(`[words-hunter] /hunt: created page for '${word}'`);
+        } else {
+          api.logger.info(`[words-hunter] /hunt '${word}': ${result.error.message}`);
+        }
+        return; // don't run sighting scan on a slash command
+      }
+
       await onOutgoingMessage(configResult.data, event.content, ctx.channelId);
       // Also persist primary_channel for nudge routing
       void persistPrimaryChannel(configResult.data, ctx.channelId);

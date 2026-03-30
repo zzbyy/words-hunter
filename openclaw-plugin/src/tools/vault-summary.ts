@@ -1,5 +1,6 @@
+import fs from 'node:fs/promises';
 import { ToolResult, VaultConfig, VaultSummary, ok } from '../types.js';
-import { masteryJsonPath, readMasteryStore } from '../vault.js';
+import { masteryJsonPath, wordsFolderPath, readMasteryStore } from '../vault.js';
 import { isDue, todayString } from '../srs/scheduler.js';
 
 /**
@@ -16,7 +17,19 @@ export async function vaultSummary(
   if (!storeResult.ok) return storeResult;
   const store = storeResult.data;
 
-  const entries = Object.values(store.words);
+  // Only count words whose .md page still exists on disk.
+  // One readdir() + Set lookup instead of N fs.access() calls.
+  const wordsDir = wordsFolderPath(config);
+  let existingFiles: Set<string>;
+  try {
+    const files = await fs.access(wordsDir).then(() => fs.readdir(wordsDir));
+    existingFiles = new Set(files.filter(f => f.endsWith('.md')).map(f => f.toLowerCase()));
+  } catch {
+    existingFiles = new Set();
+  }
+  const entries = Object.values(store.words).filter(
+    e => existingFiles.has(`${e.word.toLowerCase()}.md`)
+  );
 
   let mastered = 0;
   let reviewing = 0;

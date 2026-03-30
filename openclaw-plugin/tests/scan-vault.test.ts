@@ -42,6 +42,9 @@ describe('scan_vault', () => {
         },
       };
       await writeMasteryStore(vaultPath, store);
+      // .md files must exist for words to be included
+      await writeFile(join(vaultPath, 'Words', 'posit.md'), '# posit', 'utf8');
+      await writeFile(join(vaultPath, 'Words', 'ephemeral.md'), '# ephemeral', 'utf8');
       const result = await scanVault(config, 'all');
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -64,6 +67,9 @@ describe('scan_vault', () => {
         },
       };
       await writeMasteryStore(vaultPath, store);
+      // .md files must exist for words to be included
+      await writeFile(join(vaultPath, 'Words', 'posit.md'), '# posit', 'utf8');
+      await writeFile(join(vaultPath, 'Words', 'ephemeral.md'), '# ephemeral', 'utf8');
       // Pass TODAY explicitly so the test isn't sensitive to the system clock
       const result = await scanVault(config, 'due', TODAY);
       expect(result.ok).toBe(true);
