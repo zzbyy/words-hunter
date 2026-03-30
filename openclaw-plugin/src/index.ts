@@ -1,15 +1,22 @@
 /**
  * Words Hunter OpenClaw Plugin
  *
- * Registers 6 tools, 2 crons, and 1 message hook for vocabulary mastery.
+ * Registers 6 agent tools and 1 message hook for vocabulary mastery.
  * All state is in {vault}/.wordshunter/mastery.json.
  * Word .md pages are display/content layer.
+ *
+ * Entry point follows the real OpenClaw SDK contract:
+ *   - default export via definePluginEntry
+ *   - api.registerTool({name, description, parameters, execute})
+ *   - api.on('message_received', handler) for sighting detection
+ *   - api.on('gateway_start', handler) for background crons
+ *   - Vault path from api.pluginConfig.vault_path (set on plugin install)
  */
 
-// NOTE: These imports use the OpenClaw SDK shape documented in SCHEMA.md Appendix A.
-// Replace with actual SDK imports when the package is available on ClawHub.
-import type { PluginContext } from './sdk-shim.js';
-import { loadVaultConfig, masteryJsonPath, nudgeQueuePath, readNudgeQueue, writeNudgeQueue } from './vault.js';
+import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
+import { Type } from '@sinclair/typebox';
+import type { VaultConfig, ToolResult } from './types.js';
+import { loadVaultConfig, nudgeQueuePath, readNudgeQueue, writeNudgeQueue, readMasteryStore, masteryJsonPath } from './vault.js';
 import { importUntracked } from './importer.js';
 import { scanVault } from './tools/scan-vault.js';
 import { loadWord } from './tools/load-word.js';
@@ -19,110 +26,208 @@ import { recordSighting } from './tools/record-sighting.js';
 import { vaultSummary } from './tools/vault-summary.js';
 import { onOutgoingMessage } from './hooks/sighting-hook.js';
 import { startWatcher } from './watcher.js';
-import { todayString } from './srs/scheduler.js';
 
-export async function onLoad(ctx: PluginContext): Promise<void> {
-  // Load vault config (P1 blocker — plugin is inert if config.json absent)
-  const configResult = await loadVaultConfig(ctx.vaultRoot);
-  if (!configResult.ok) {
-    ctx.logger.error(`Words Hunter: ${configResult.error.message}`);
-    return;
-  }
-  const config = configResult.data;
-
-  // One-time import: bring untracked words into mastery.json
-  const { imported } = await importUntracked(config);
-  if (imported.length > 0) {
-    ctx.logger.info(`Words Hunter: imported ${imported.length} untracked word(s): ${imported.join(', ')}`);
-  }
-
-  // Start file watcher for 24h capture nudges
-  const stopWatcher = await startWatcher(config, ctx.logger, {
-    sendWarning: (msg) => ctx.channel.sendToPrimary(msg),
-  });
-  ctx.onUnload(stopWatcher);
-
-  // Store primary channel on first interaction
-  ctx.channel.onFirstInteraction((channelId) => {
-    // Persist primary_channel to config.json for routing nudges + recap
-    void persistPrimaryChannel(config, channelId);
-  });
-
-  // Register tools
-  // params are typed as unknown at the SDK boundary; cast inside each handler
-  ctx.registerTool('scan_vault', async (params: unknown) => {
-    const p = params as { filter?: string };
-    const filter = (p.filter ?? 'all') as 'all' | 'due' | 'new';
-    return scanVault(config, filter);
-  });
-
-  ctx.registerTool('load_word', async (params: unknown) => {
-    const p = params as { word: string };
-    return loadWord(config, p.word);
-  });
-
-  ctx.registerTool('record_mastery', async (params: unknown) => {
-    const p = params as { word: string; score: number; best_sentence?: string; failure_note?: string };
-    return recordMastery(config, p);
-  });
-
-  ctx.registerTool('update_page', async (params: unknown) => {
-    const p = params as { word: string; best_sentence?: string; graduation_sentence?: string; content_hash?: string };
-    return updatePage(config, p);
-  });
-
-  ctx.registerTool('record_sighting', async (params: unknown) => {
-    const p = params as { word: string; sentence: string; channel?: string };
-    return recordSighting(config, p);
-  });
-
-  ctx.registerTool('vault_summary', async (_params: unknown) => {
-    return vaultSummary(config);
-  });
-
-  // Cron: every 15 minutes — fire overdue nudges
-  ctx.registerCron('*/15 * * * *', async () => {
-    await fireOverdueNudges(config, ctx);
-  });
-
-  // Cron: Sunday 9am — weekly vocab recap
-  ctx.registerCron('0 9 * * 0', async () => {
-    const result = await vaultSummary(config);
-    if (!result.ok) return;
-    const s = result.data;
-    const msg =
-      `Weekly vocab recap:\n` +
-      `📚 ${s.total} words total — ${s.mastered} mastered, ${s.reviewing} reviewing, ${s.learning} learning\n` +
-      `Today: ${s.due_today} due\n` +
-      (s.last_session ? `Last session: ${s.last_session}` : 'No sessions yet — start with /vocab');
-    ctx.channel.sendToPrimary(msg);
-  });
-
-  // Message hook: detect captured words in outgoing messages
-  ctx.registerHook('message:outgoing', async (data: unknown) => {
-    const message = data as { text: string; channelId: string };
-    const label = ctx.channel.labelFor(message.channelId);
-    await onOutgoingMessage(config, message.text, label);
-  });
+/** Wrap any ToolResult into the AgentToolResult format OpenClaw expects. */
+function toAgentResult(result: ToolResult<unknown>): { content: { type: 'text'; text: string }[]; details: unknown } {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+    details: result,
+  };
 }
 
-import type { VaultConfig } from './types.js';
+export default definePluginEntry({
+  id: 'words-hunter',
+  name: 'Words Hunter',
+  description: 'Master vocabulary captured via conversational AI sessions. Provides scan_vault, load_word, record_mastery, update_page, record_sighting, and vault_summary tools.',
 
-async function fireOverdueNudges(
-  config: VaultConfig,
-  ctx: PluginContext,
-): Promise<void> {
-  // Only fire nudges if primary_channel is configured — otherwise leave them queued
-  // (primary_channel is set on first user interaction; the cron may fire before that)
+  register(api) {
+    // --- Vault config bootstrap ---
+    // Vault path comes from plugin config: openclaw plugin config set words-hunter vault_path <path>
+    // loadVaultConfig reads .wordshunter/config.json from that path.
+    const rawVaultPath = api.pluginConfig?.['vault_path'] as string | undefined;
+    if (!rawVaultPath) {
+      api.logger.error('[words-hunter] vault_path not configured. Run: openclaw plugin config set words-hunter vault_path /path/to/vault');
+    }
+
+    // Lazy config: resolved once, reused across all tool calls.
+    // register() is synchronous so we kick off the async load here.
+    const configPromise: Promise<{ ok: true; data: VaultConfig } | { ok: false; error: { message: string } }> =
+      rawVaultPath
+        ? (loadVaultConfig(rawVaultPath) as Promise<{ ok: true; data: VaultConfig } | { ok: false; error: { message: string } }>)
+        : Promise.resolve({ ok: false as const, error: { message: 'vault_path not configured' } });
+
+    // Fire one-time import when config loads
+    void configPromise.then(async (result) => {
+      if (!result.ok) {
+        api.logger.error(`[words-hunter] ${result.error.message}`);
+        return;
+      }
+      const { imported } = await importUntracked(result.data);
+      if (imported.length > 0) {
+        api.logger.info(`[words-hunter] imported ${imported.length} untracked word(s): ${imported.join(', ')}`);
+      }
+    });
+
+    // --- Tool registration ---
+
+    api.registerTool({
+      name: 'scan_vault',
+      label: 'Scan Vault',
+      description: "List words in the Words Hunter vault filtered by status. Use filter='due' for today's practice session, 'new' for unreviewed captures, or 'all' for everything.",
+      parameters: Type.Object({
+        filter: Type.Optional(Type.String({ description: "Filter: 'all' (default), 'due', or 'new'" })),
+      }),
+      async execute(_id, params) {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await scanVault(configResult.data, (params.filter ?? 'all') as 'all' | 'due' | 'new');
+        return toAgentResult(result) as never;
+      },
+    });
+
+    api.registerTool({
+      name: 'load_word',
+      label: 'Load Word',
+      description: 'Load a word page from the vault including its markdown content and mastery state. Returns the full .md content plus SRS data (box, score, next_review).',
+      parameters: Type.Object({
+        word: Type.String({ description: 'The word to load (case-insensitive, e.g. "posit")' }),
+      }),
+      async execute(_id, params) {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await loadWord(configResult.data, params.word);
+        return toAgentResult(result) as never;
+      },
+    });
+
+    api.registerTool({
+      name: 'record_mastery',
+      label: 'Record Mastery',
+      description: 'Record a mastery practice session for a word. Advances or drops the Leitner SRS box (threshold: 85/100). Supply the best sentence the user produced.',
+      parameters: Type.Object({
+        word: Type.String({ description: 'The word practiced' }),
+        score: Type.Number({ description: 'Session score 0–100. ≥85 advances the box; <85 drops one box.' }),
+        best_sentence: Type.Optional(Type.String({ description: "User's best sentence demonstrating the word" })),
+        failure_note: Type.Optional(Type.String({ description: 'Brief note if the user struggled' })),
+      }),
+      async execute(_id, params) {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await recordMastery(configResult.data, params);
+        return toAgentResult(result) as never;
+      },
+    });
+
+    api.registerTool({
+      name: 'update_page',
+      label: 'Update Page',
+      description: "Write agent-generated content back to a word's .md page. Use for storing the best sentence after a session or writing a graduation section when the word reaches box 4+.",
+      parameters: Type.Object({
+        word: Type.String({ description: 'The word to update' }),
+        best_sentence: Type.Optional(Type.String({ description: 'Best sentence to store in the ## Best Sentences section' })),
+        graduation_sentence: Type.Optional(Type.String({ description: 'Memorable sentence for the ## Graduation section (box 4+ only)' })),
+        content_hash: Type.Optional(Type.String({ description: 'MD5 of page content at read time — prevents overwriting concurrent edits' })),
+      }),
+      async execute(_id, params) {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await updatePage(configResult.data, params);
+        return toAgentResult(result) as never;
+      },
+    });
+
+    api.registerTool({
+      name: 'record_sighting',
+      label: 'Record Sighting',
+      description: "Append a sighting entry to a word's ## Sightings section. Call this when the user uses a captured word in a message.",
+      parameters: Type.Object({
+        word: Type.String({ description: 'The word that was sighted' }),
+        sentence: Type.String({ description: 'The full sentence in which the word appeared' }),
+        channel: Type.Optional(Type.String({ description: 'Channel label, e.g. "Telegram — work chat"' })),
+      }),
+      async execute(_id, params) {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await recordSighting(configResult.data, params);
+        return toAgentResult(result) as never;
+      },
+    });
+
+    api.registerTool({
+      name: 'vault_summary',
+      label: 'Vault Summary',
+      description: 'Get aggregate stats for the Words Hunter vault: total words, mastery breakdown (mastered/reviewing/learning), due count, and last session date.',
+      parameters: Type.Object({}),
+      async execute() {
+        const configResult = await configPromise;
+        if (!configResult.ok) return toAgentResult({ ok: false, error: { code: 'VAULT_NOT_FOUND', message: configResult.error.message } }) as never;
+        const result = await vaultSummary(configResult.data);
+        return toAgentResult(result) as never;
+      },
+    });
+
+    // --- Sighting hook ---
+    // Fires when the user sends a message. Scans for captured words and logs sightings.
+    api.on('message_received', async (event, ctx) => {
+      const configResult = await configPromise;
+      if (!configResult.ok) return;
+      await onOutgoingMessage(configResult.data, event.content, ctx.channelId);
+      // Also persist primary_channel for nudge routing
+      void persistPrimaryChannel(configResult.data, ctx.channelId);
+    });
+
+    // --- Background crons via gateway_start ---
+    // OpenClawPluginApi has no registerCron. Use gateway lifecycle hooks + setInterval.
+    let nudgeInterval: ReturnType<typeof setInterval> | null = null;
+    let weeklyInterval: ReturnType<typeof setInterval> | null = null;
+    let stopWatcherFn: (() => void) | null = null;
+
+    api.on('gateway_start', async (_event, _ctx) => {
+      const configResult = await configPromise;
+      if (!configResult.ok) return;
+      const config = configResult.data;
+
+      // Start file watcher for 24h capture nudges
+      stopWatcherFn = await startWatcher(config, api.logger, {
+        sendWarning: (msg) => {
+          api.logger.info(`[words-hunter nudge] ${msg}`);
+        },
+      });
+
+      // Nudge check every 15 minutes
+      nudgeInterval = setInterval(() => {
+        void fireOverdueNudges(config, api.logger);
+      }, 15 * 60 * 1000);
+
+      // Weekly recap: check every hour, fire Sunday 9am
+      weeklyInterval = setInterval(() => {
+        const now = new Date();
+        if (now.getDay() === 0 && now.getHours() === 9 && now.getMinutes() < 60) {
+          void fireWeeklyRecap(config, api.logger);
+        }
+      }, 60 * 60 * 1000);
+    });
+
+    api.on('gateway_stop', async (_event, _ctx) => {
+      if (nudgeInterval) { clearInterval(nudgeInterval); nudgeInterval = null; }
+      if (weeklyInterval) { clearInterval(weeklyInterval); weeklyInterval = null; }
+      if (stopWatcherFn) { stopWatcherFn(); stopWatcherFn = null; }
+    });
+  },
+});
+
+// --- Helpers ---
+
+async function fireOverdueNudges(config: VaultConfig, logger: { info: (m: string) => void }): Promise<void> {
   const path = await import('node:path');
   const fs = await import('node:fs/promises');
   const configPath = path.join(config.vault_path, '.wordshunter', 'config.json');
   try {
     const raw = await fs.readFile(configPath, 'utf8');
     const obj = JSON.parse(raw);
-    if (!obj.primary_channel) return;  // not yet set — leave nudges for next cycle
+    if (!obj.primary_channel) return;
   } catch {
-    return;  // config unreadable — don't consume nudges
+    return;
   }
 
   const queuePath = nudgeQueuePath(config);
@@ -133,30 +238,31 @@ async function fireOverdueNudges(
   const toFire = queue.nudges.filter(n => new Date(n.nudge_due_at) <= now);
   if (toFire.length === 0) return;
 
-  // Read mastery to check if word was already practiced
-  const { readMasteryStore, masteryJsonPath } = await import('./vault.js');
   const jsonPath = masteryJsonPath(config);
   const storeResult = await readMasteryStore(jsonPath);
   const store = storeResult.ok ? storeResult.data : null;
 
   for (const nudge of toFire) {
-    // Skip if word already has mastery state (user already reviewed)
     if (store?.words[nudge.word]?.sessions && store.words[nudge.word].sessions > 0) continue;
-    ctx.channel.sendToPrimary(
-      `You just captured "${nudge.word}" yesterday — want to spend 2 minutes on it? Type /vocab to start.`,
-    );
+    logger.info(`[words-hunter nudge] "${nudge.word}" — captured 24h ago. Type /vocab to practice.`);
   }
 
-  // Remove fired nudges
   queue.nudges = queue.nudges.filter(n => new Date(n.nudge_due_at) > now);
   await writeNudgeQueue(queuePath, queue);
 }
 
-async function persistPrimaryChannel(
-  config: { vault_path: string; words_folder: string },
-  channelId: string,
-): Promise<void> {
-  // Merge primary_channel into config.json atomically (tmp+rename)
+async function fireWeeklyRecap(config: VaultConfig, logger: { info: (m: string) => void }): Promise<void> {
+  const jsonPath = masteryJsonPath(config);
+  const storeResult = await readMasteryStore(jsonPath);
+  if (!storeResult.ok) return;
+  const words = Object.values(storeResult.data.words);
+  const mastered = words.filter(w => w.box >= 4).length;
+  const reviewing = words.filter(w => w.box === 3).length;
+  const learning = words.filter(w => w.box <= 2).length;
+  logger.info(`[words-hunter weekly] ${words.length} words — ${mastered} mastered, ${reviewing} reviewing, ${learning} learning`);
+}
+
+async function persistPrimaryChannel(config: VaultConfig, channelId: string): Promise<void> {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
   const dir = path.join(config.vault_path, '.wordshunter');
