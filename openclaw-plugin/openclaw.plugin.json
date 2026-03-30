@@ -1,0 +1,21 @@
+{
+  "id": "words-hunter",
+  "name": "Words Hunter",
+  "version": "1.0.0",
+  "description": "Master vocabulary captured by Words Hunter via conversational AI sessions.",
+  "entrypoint": "dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "vault_path": {
+        "type": "string",
+        "description": "Absolute path to your words directory. Usually auto-discovered from the Words Hunter macOS app — only set this manually if auto-discovery is not working."
+      },
+      "recap_channel": {
+        "type": "string",
+        "description": "Channel ID for weekly vocab recap. Defaults to the channel where the first session ran."
+      }
+    }
+  }
+}

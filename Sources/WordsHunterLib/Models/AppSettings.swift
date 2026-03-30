@@ -74,6 +74,30 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: Key.mwApiKey) }
     }
 
+    // MARK: - Config bridge
+
+    /// Exports `.wordshunter/config.json` to the vault root so the OpenClaw TypeScript plugin
+    /// can discover the vault path and words folder without accessing UserDefaults (inaccessible
+    /// from Node.js). Called each time the user saves settings.
+    func exportConfigBridge() {
+        guard !vaultPath.isEmpty else { return }
+        let vaultURL = URL(fileURLWithPath: vaultPath)
+        let dotDir = vaultURL.appendingPathComponent(".wordshunter")
+        let configURL = dotDir.appendingPathComponent("config.json")
+        let config: [String: Any] = [
+            "vault_path": vaultPath,
+            "words_folder": useWordFolder ? wordFolder : ""
+        ]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: config, options: [.prettyPrinted, .sortedKeys]
+        ) else { return }
+        try? FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        try? data.write(to: configURL, options: .atomic)
+
+        // Also write the shared discovery file so the OpenClaw plugin can auto-discover this path.
+        DiscoveryFile.write(wordsDirectory: vaultPath, wordsFolder: useWordFolder ? wordFolder : "")
+    }
+
     // MARK: - Init
 
     /// Designated init. Uses UserDefaults.standard in production.

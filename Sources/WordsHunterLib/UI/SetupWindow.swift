@@ -48,12 +48,12 @@ final class SetupViewController: NSViewController {
 
     private let vaultPathField: NSTextField = {
         let f = NSTextField()
-        f.placeholderString = "/Users/you/Documents/My Vault"
+        f.placeholderString = "/Users/you/Documents/English Words"
         f.bezelStyle = .roundedBezel
         return f
     }()
 
-    private let useWordFolderToggle = NSButton(checkboxWithTitle: "Save captured words in a subfolder in the vault", target: nil, action: nil)
+    private let useWordFolderToggle = NSButton(checkboxWithTitle: "Save captured words in a subfolder", target: nil, action: nil)
 
     private let wordFolderField: NSTextField = {
         let f = NSTextField()
@@ -157,9 +157,9 @@ final class SetupViewController: NSViewController {
         browseBtn.setContentHuggingPriority(.required, for: .horizontal)
         browseBtn.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        vaultPathField.setAccessibilityLabel("Obsidian vault folder path")
+        vaultPathField.setAccessibilityLabel("Words directory path")
 
-        let vaultBox = makeBox(title: "Obsidian Vault",
+        let vaultBox = makeBox(title: "Words Directory",
                                rows: [hstack([vaultPathField, browseBtn])],
                                width: boxWidth)
 
@@ -175,7 +175,7 @@ final class SetupViewController: NSViewController {
             """
             📖 Dictionary Lookup
             When enabled, Words Hunter quietly fetches a definition from Merriam-Webster \
-            after capturing a word — you'll find it waiting in your Obsidian page.
+            after capturing a word — you'll find it waiting in the word's page.
 
             💡 Research shows that writing your own definition strengthens memory far more \
             than reading one. Use this as a starting scaffold — the learning happens when \
@@ -254,7 +254,7 @@ final class SetupViewController: NSViewController {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Select Vault"
+        panel.prompt = "Select Folder"
         if panel.runModal() == .OK, let url = panel.url {
             vaultPathField.stringValue = url.path
         }
@@ -275,11 +275,11 @@ final class SetupViewController: NSViewController {
 
     @objc private func startHunting() {
         let vaultPath = vaultPathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !vaultPath.isEmpty else { showAlert("Please select your Obsidian vault folder."); return }
+        guard !vaultPath.isEmpty else { showAlert("Please select your words directory."); return }
 
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: vaultPath, isDirectory: &isDir), isDir.boolValue else {
-            showAlert("Vault folder not found. Please choose a valid folder.")
+            showAlert("Directory not found. Please choose a valid folder.")
             return
         }
 
@@ -292,6 +292,7 @@ final class SetupViewController: NSViewController {
         s.mwApiKey = mwApiKeyField.stringValue.trimmingCharacters(in: apiKeyTrimSet)
         s.lookupRetries = Int(retriesStepper.intValue)
         s.isSetupComplete = true
+        s.exportConfigBridge()
 
         setupDelegate?.setupViewControllerDidComplete(self)
     }

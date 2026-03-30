@@ -36,8 +36,9 @@ struct WordPageCreator {
         // Write the template
         let dateString = ISO8601DateFormatter().string(from: Date()).prefix(10)
         let content = """
-        > [!info] \(filename)
-        > //
+        # \(filename)
+
+        **Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
 
         ## Sightings
         - \(dateString) — *(context sentence where you saw the word)*
@@ -51,7 +52,7 @@ struct WordPageCreator {
         > *()*
 
         **My sentence:**
-        -
+        - *(write your own sentence using this word)*
 
         **Patterns:**
         - *(common word combinations and grammar patterns)*

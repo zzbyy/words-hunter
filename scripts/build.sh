@@ -2,7 +2,9 @@
 set -e
 cd "$(dirname "$0")/.."
 
-echo "Building Words Hunter (release)..."
+VERSION=$(cat VERSION 2>/dev/null || echo "1.0.0")
+
+echo "Building Words Hunter $VERSION (release)..."
 swift build -c release
 
 APP_DIR="dist/Words Hunter.app/Contents"
@@ -14,7 +16,7 @@ mkdir -p "$MACOS_DIR"
 
 cp ".build/release/WordsHunter" "$MACOS_DIR/Words Hunter"
 
-cat > "$APP_DIR/Info.plist" << 'PLIST'
+cat > "$APP_DIR/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -26,9 +28,9 @@ cat > "$APP_DIR/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.wordshunter.app</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${VERSION}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
@@ -45,5 +47,14 @@ cat > "$APP_DIR/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-echo "✓ Built: dist/Words Hunter.app"
+# Ad-hoc code signing — required for macOS to accept the bundle in
+# System Settings → Privacy & Security → Accessibility (TCC).
+# Uses "-" (ad-hoc identity): no Developer account needed.
+echo "Signing bundle (ad-hoc)..."
+codesign --force --deep --sign - "dist/Words Hunter.app"
+
+echo "✓ Built: dist/Words Hunter.app (v${VERSION})"
 echo "  Drag to /Applications to install."
+echo ""
+echo "  If Accessibility permission was previously granted to an older build,"
+echo "  remove and re-add Words Hunter in System Settings → Privacy & Security → Accessibility."
