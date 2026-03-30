@@ -27,8 +27,8 @@ enum WordPageUpdater {
             return  // unreadable — abort silently
         }
 
-        // Guard: old-format pages (YAML frontmatter) — do not touch
-        guard text.contains("> [!info]") else { return }
+        // Guard: page must have the Syllables/Pronunciation header line
+        guard text.contains("**Syllables:**") else { return }
 
         // Guard: abort if user has already edited the first meaning placeholder
         guard text.contains("### 1. () *()*") else { return }
@@ -44,16 +44,13 @@ enum WordPageUpdater {
 
         var updated = text
 
-        // Fill callout block: replace headword and pronunciation lines
+        // Fill Syllables/Pronunciation header line
         let syllableDisplay = content.headword?
             .replacingOccurrences(of: "*", with: "·") ?? lemma
-        let pronunciationDisplay = content.pronunciation ?? ""
+        let pronunciationDisplay = content.pronunciation.map { "/\($0)/" } ?? ""
         var lines = updated.components(separatedBy: "\n")
-        if let calloutIndex = lines.firstIndex(where: { $0.hasPrefix("> [!info]") }) {
-            lines[calloutIndex] = "> [!info] \(syllableDisplay)"
-            if calloutIndex + 1 < lines.count && lines[calloutIndex + 1].hasPrefix("> /") {
-                lines[calloutIndex + 1] = "> /\(pronunciationDisplay)/"
-            }
+        if let idx = lines.firstIndex(where: { $0.hasPrefix("**Syllables:**") }) {
+            lines[idx] = "**Syllables:** \(syllableDisplay) · **Pronunciation:** \(pronunciationDisplay)"
         }
         updated = lines.joined(separator: "\n")
 
@@ -65,7 +62,7 @@ enum WordPageUpdater {
             let example = index < content.examples.count ? content.examples[index] : ""
             var block = "### \(num). (\(pos)) *(\(def))*\n"
             block += "\n> *(\(example))*\n"
-            block += "\n**My sentence:**\n-\n"
+            block += "\n**My sentence:**\n- \n"
             block += "\n**Patterns:**\n- *(common word combinations and grammar patterns)*"
             meaningBlocks.append(block)
         }

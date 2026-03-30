@@ -125,6 +125,10 @@ swift build
 3. Toggle **Enable dictionary lookup** and paste your API key.
 4. Capture any word — the definition appears in the `## Meanings` section within a few seconds.
 
+### Customising the word page template (optional)
+
+Click **Edit Word Template…** in Preferences to open `.wordshunter/template.md` in your default editor. Use `{{word}}` and `{{date}}` as placeholders. Changes take effect immediately — no rebuild needed. Delete the file to reset to the default template.
+
 ### OpenClaw mastery plugin (optional)
 
 The mastery plugin connects Words Hunter to OpenClaw, an AI agent platform.
@@ -167,8 +171,9 @@ If the word was already captured, nothing happens — silent skip, no duplicate.
 Each captured word creates a file like `posit.md`:
 
 ```markdown
-> [!info] posit
-> //
+# posit
+
+**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
 
 ## Sightings
 - 2026-03-29 — *(context sentence where you saw the word)*
@@ -182,7 +187,7 @@ Each captured word creates a file like `posit.md`:
 > *()*
 
 **My sentence:**
--
+- *(write your own sentence using this word)*
 
 **Patterns:**
 - *(common word combinations and grammar patterns)*
@@ -307,6 +312,7 @@ Words Hunter is two independent systems connected by a single JSON file.
 - `.wordshunter/mastery.json` — canonical SRS state (box, score, next_review, history)
 - `{word}.md` — human-readable page; the `> [!mastery]` callout is a derived view rendered from mastery.json
 - `.wordshunter/config.json` — written by Swift app, read by TypeScript plugin
+- `.wordshunter/template.md` — user-editable word page template (seeded on first save)
 - `.wordshunter/pending-nudges.json` — 24h nudge queue
 
 All file writes in both the Swift app and TypeScript plugin use atomic rename (write to tmp → rename). See `SCHEMA.md` for the full format contract.

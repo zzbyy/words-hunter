@@ -7,13 +7,18 @@
 
 ## 1. Word Page Format (`.md`)
 
-Created by the Swift app (`WordPageCreator.swift`). Filename: `{lemma.lowercased()}.md`.
+Created by the Swift app (`WordPageCreator.swift`) or the OpenClaw plugin (`create-word.ts`).
+Filename: `{lemma.lowercased()}.md`.
 
-### Template
+Both sides read the user-editable template at `.wordshunter/template.md` (falling back to a
+built-in default). Placeholders: `{{word}}` (lemma) and `{{date}}` (YYYY-MM-DD).
+
+### Default Template
 
 ```markdown
-> [!info] {word}
-> //
+# {word}
+
+**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
 
 ## Sightings
 - {YYYY-MM-DD} — *(context sentence where you saw the word)*
@@ -27,7 +32,7 @@ Created by the Swift app (`WordPageCreator.swift`). Filename: `{lemma.lowercased
 > *()*
 
 **My sentence:**
--
+- *(write your own sentence using this word)*
 
 **Patterns:**
 - *(common word combinations and grammar patterns)*

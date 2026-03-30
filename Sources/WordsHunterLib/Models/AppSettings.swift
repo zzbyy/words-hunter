@@ -94,6 +94,9 @@ final class AppSettings {
         try? FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
         try? data.write(to: configURL, options: .atomic)
 
+        // Seed template.md if the user hasn't created one yet
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: vaultPath)
+
         // Also write the shared discovery file so the OpenClaw plugin can auto-discover this path.
         DiscoveryFile.write(wordsDirectory: vaultPath, wordsFolder: useWordFolder ? wordFolder : "")
     }

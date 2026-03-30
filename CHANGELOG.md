@@ -12,17 +12,19 @@ Format: [version] - YYYY-MM-DD
 
 - **`create_word` tool** — agent can add a word page directly from chat; also powers the new `/hunt <word>` slash command
 - **`/hunt <word>` slash command** — send `/hunt ephemeral` in any connected channel to instantly capture a word without the macOS app
+- **User-editable word page template** — `.wordshunter/template.md` is seeded on first settings save and opened via **Edit Word Template…** in Preferences. Use `{{word}}` and `{{date}}` placeholders. Both the macOS app and OpenClaw plugin read this file; delete it to reset to the built-in default. No rebuild needed when you change it.
 
 ### Changed
 
 - **`scan_vault` + `vault_summary`** now filter out words whose `.md` page has been deleted — no more stale entries confusing the agent after manual deletion. Performance improved: one `readdir()` + Set lookup instead of N `fs.access()` calls (scales to tens of thousands of words)
 - **Word page template** removes Obsidian-specific `> [!info]` callout; syllables and pronunciation now rendered as standard Markdown (`# word` heading + bold labels) — works in any Markdown editor
-- **`My sentence:` bullet** now has a placeholder text instead of a bare `-` (invalid Markdown list item)
+- **`My sentence:` bullet** now has a trailing space (`- `) to form a valid Markdown list item in all editors
 - **SetupWindow** removes all "Obsidian Vault" labels → "Words Directory"; works with any folder, any Markdown editor
 - **Plugin + app** auto-discover each other's configured words directory via `~/Library/Application Support/WordsHunter/discovery.json` — zero manual config after first setup on either side
 
 ### Fixed
 
+- **Auto-lookup now fills word pages** — `WordPageUpdater` was guarding on `> [!info]` callout format but the template uses `**Syllables:**` bold labels; lookup silently aborted on every capture. Guard updated to match the actual template format.
 - Deleted word pages no longer appear in agent scans after manual deletion from vault
 
 ---
