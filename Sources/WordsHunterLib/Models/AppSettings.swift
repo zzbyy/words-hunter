@@ -93,6 +93,9 @@ final class AppSettings {
         ) else { return }
         try? FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
         try? data.write(to: configURL, options: .atomic)
+
+        // Also write the shared discovery file so the OpenClaw plugin can auto-discover this path.
+        DiscoveryFile.write(wordsDirectory: vaultPath, wordsFolder: useWordFolder ? wordFolder : "")
     }
 
     // MARK: - Init

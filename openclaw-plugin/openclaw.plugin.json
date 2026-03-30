@@ -10,7 +10,7 @@
     "properties": {
       "vault_path": {
         "type": "string",
-        "description": "Absolute path to your Obsidian vault (same folder configured in Words Hunter)."
+        "description": "Absolute path to your words directory. Usually auto-discovered from the Words Hunter macOS app — only set this manually if auto-discovery is not working."
       },
       "recap_channel": {
         "type": "string",

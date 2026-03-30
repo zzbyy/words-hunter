@@ -15,8 +15,11 @@
 
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import { Type } from '@sinclair/typebox';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { VaultConfig, ToolResult } from './types.js';
 import { loadVaultConfig, nudgeQueuePath, readNudgeQueue, writeNudgeQueue, readMasteryStore, masteryJsonPath } from './vault.js';
+import { readDiscovery, writeDiscovery } from './discovery.js';
 import { importUntracked } from './importer.js';
 import { scanVault } from './tools/scan-vault.js';
 import { loadWord } from './tools/load-word.js';
@@ -42,19 +45,61 @@ export default definePluginEntry({
 
   register(api) {
     // --- Vault config bootstrap ---
-    // Vault path comes from plugin config: openclaw plugin config set words-hunter vault_path <path>
-    // loadVaultConfig reads .wordshunter/config.json from that path.
-    const rawVaultPath = api.pluginConfig?.['vault_path'] as string | undefined;
-    if (!rawVaultPath) {
-      api.logger.error('[words-hunter] vault_path not configured. Run: openclaw plugin config set words-hunter vault_path /path/to/vault');
-    }
+    // Resolution priority:
+    //   1. ~/Library/Application Support/WordsHunter/discovery.json (shared with macOS app)
+    //   2. api.pluginConfig['vault_path'] (manual override via openclaw config set)
+    //   3. Error with instructions for both paths
+    //
+    // Whichever side (app or plugin) configures first writes the discovery file so the
+    // other side can find the directory automatically.
 
     // Lazy config: resolved once, reused across all tool calls.
     // register() is synchronous so we kick off the async load here.
     const configPromise: Promise<{ ok: true; data: VaultConfig } | { ok: false; error: { message: string } }> =
-      rawVaultPath
-        ? (loadVaultConfig(rawVaultPath) as Promise<{ ok: true; data: VaultConfig } | { ok: false; error: { message: string } }>)
-        : Promise.resolve({ ok: false as const, error: { message: 'vault_path not configured' } });
+      (async (): Promise<{ ok: true; data: VaultConfig } | { ok: false; error: { message: string } }> => {
+        // 1. Try shared discovery file (written by the macOS app on settings save)
+        const discovered = await readDiscovery();
+        if (discovered) {
+          api.logger.info(`[words-hunter] Discovered words directory: ${discovered.words_directory}`);
+          const config: VaultConfig = {
+            vault_path: discovered.words_directory,
+            words_folder: discovered.words_folder,
+          };
+          // Ensure .wordshunter/config.json exists so downstream tools can use it
+          await ensureConfigBridge(config);
+          return { ok: true as const, data: config };
+        }
+
+        // 2. Try manual plugin config override
+        const rawVaultPath = api.pluginConfig?.['vault_path'] as string | undefined;
+        if (rawVaultPath) {
+          api.logger.info(`[words-hunter] Using vault_path from plugin config: ${rawVaultPath}`);
+          const bridgeResult = await loadVaultConfig(rawVaultPath) as { ok: true; data: VaultConfig } | { ok: false; error: { message: string } };
+          if (bridgeResult.ok) {
+            // Write to discovery file so the macOS app can find this path
+            await writeDiscovery(bridgeResult.data.vault_path, bridgeResult.data.words_folder);
+            return bridgeResult;
+          }
+          // Bridge file missing — treat the path itself as the words directory
+          try {
+            await fs.access(rawVaultPath);
+            const config: VaultConfig = { vault_path: rawVaultPath, words_folder: '' };
+            await ensureConfigBridge(config);
+            await writeDiscovery(rawVaultPath, '');
+            return { ok: true as const, data: config };
+          } catch {
+            return { ok: false as const, error: { message: `vault_path '${rawVaultPath}' does not exist on disk` } };
+          }
+        }
+
+        // 3. Nothing configured
+        api.logger.error(
+          '[words-hunter] Words directory not configured. Either:\n' +
+          '  - Install the Words Hunter macOS app and select a words directory, OR\n' +
+          '  - Run: openclaw config set plugins.entries.words-hunter.config.vault_path /path/to/words'
+        );
+        return { ok: false as const, error: { message: 'Words directory not configured. Install the Words Hunter macOS app, or set vault_path in plugin config.' } };
+      })();
 
     // Fire one-time import when config loads
     void configPromise.then(async (result) => {
@@ -217,6 +262,32 @@ export default definePluginEntry({
 });
 
 // --- Helpers ---
+
+/**
+ * Ensure .wordshunter/config.json exists inside the words directory.
+ * This file is used by loadVaultConfig() and stores primary_channel.
+ * When the plugin discovers a path from the discovery file (not from config.json),
+ * we need to create a minimal bridge so downstream tools work correctly.
+ */
+async function ensureConfigBridge(config: VaultConfig): Promise<void> {
+  const dir = path.join(config.vault_path, '.wordshunter');
+  const configPath = path.join(dir, 'config.json');
+  try {
+    await fs.access(configPath);
+    // Already exists — nothing to do
+  } catch {
+    // Create minimal config.json
+    const bridgeContent = JSON.stringify({
+      vault_path: config.vault_path,
+      words_folder: config.words_folder,
+    }, null, 2);
+    await fs.mkdir(dir, { recursive: true });
+    const tmp = path.join(dir, `.wh-config-${Date.now()}.json.tmp`);
+    await fs.writeFile(tmp, bridgeContent, 'utf8');
+    await fs.rename(tmp, configPath);
+  }
+}
+
 
 async function fireOverdueNudges(config: VaultConfig, logger: { info: (m: string) => void }): Promise<void> {
   const path = await import('node:path');

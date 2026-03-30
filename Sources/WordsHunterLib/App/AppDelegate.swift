@@ -20,6 +20,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Warm up NLTagger to avoid first-capture latency (~200ms cold start)
         TextCapture.warmUp()
 
+        // If the app has never been configured, check whether the OpenClaw plugin
+        // already set a words directory via the shared discovery file.
+        // Pre-fill AppSettings so the setup window shows the path — user still confirms.
+        if AppSettings.shared.vaultPath.isEmpty, let discovered = DiscoveryFile.read() {
+            AppSettings.shared.vaultPath = discovered.words_directory
+            AppSettings.shared.wordFolder = discovered.words_folder.isEmpty ? "Words" : discovered.words_folder
+            AppSettings.shared.useWordFolder = !discovered.words_folder.isEmpty
+        }
+
         if AppSettings.shared.isSetupComplete {
             startMonitoringWhenTrusted()
         } else {
@@ -121,7 +130,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = "Words Hunter"
-            content.body = "Vault folder not found. Check Preferences."
+            content.body = "Words directory not found. Check Preferences."
             let request = UNNotificationRequest(
                 identifier: "vault-missing",
                 content: content,
