@@ -2,15 +2,16 @@ import Foundation
 
 // MARK: - DictionaryContent (unified model)
 
-/// Unified dictionary content model used by both Oxford (primary) and MW (fallback).
-/// Oxford fills all fields; MW fills a subset (no CEFR, collocations, extra examples).
+/// Unified dictionary content model used by Cambridge (primary) and MW (fallback).
+/// Cambridge fills all fields; MW fills a subset (no CEFR, patterns, corpus examples).
 struct DictionaryContent {
     let headword: String
     let pronunciationBrE: String?   // "/ˈdelɪɡət/"
     let pronunciationAmE: String?   // "/ˈdelɪɡət/"
     let entries: [OxfordEntry]      // one per POS (noun, verb, etc.)
     let nearbyWords: [NearbyWord]
-    let source: String              // "Oxford Learner's Dictionary" or "Merriam-Webster"
+    let corpusExamples: [String]    // Cambridge English Corpus examples
+    let source: String              // "Cambridge Dictionary" or "Merriam-Webster"
 }
 
 // MARK: - URLSession protocol for testability
@@ -63,8 +64,8 @@ final class DictionaryService {
     private var lookupTasks: [String: LookupTaskRecord] = [:]
     private let lookupTasksLock = NSLock()
 
-    /// Serial queue for Oxford lookups — ensures only one scraping request at a time
-    /// to be polite to Oxford's servers. MW fallback is not serialized.
+    /// Serial queue for Cambridge lookups — ensures only one scraping request at a time
+    /// to be polite to Cambridge's servers. MW fallback is not serialized.
     private let oxfordQueue = AsyncSerialQueue()
 
     // Dependency injection for tests
@@ -89,9 +90,9 @@ final class DictionaryService {
         let task = Task<Void, Never> {
             defer { self.clearLookupTask(for: word, id: taskID) }
             do {
-                // Try Oxford first (serialized)
+                // Try Cambridge first (serialized)
                 let content: DictionaryContent? = try await queue.run {
-                    try await self.fetchFromOxford(
+                    try await self.fetchFromCambridge(
                         word: word, retries: retries, session: session
                     )
                 }
@@ -103,7 +104,7 @@ final class DictionaryService {
             } catch is CancellationError {
                 return
             } catch {
-                print("[DictionaryService] Oxford failed for '\(word)': \(error)")
+                print("[DictionaryService] Cambridge failed for '\(word)': \(error)")
             }
 
             // Oxford failed — try MW fallback if API key is configured
@@ -137,9 +138,9 @@ final class DictionaryService {
         lookupTasksLock.unlock()
     }
 
-    // MARK: - Oxford fetch
+    // MARK: - Cambridge fetch
 
-    private func fetchFromOxford(
+    private func fetchFromCambridge(
         word: String, retries: Int, session: URLSessionProtocol
     ) async throws -> DictionaryContent? {
         let maxAttempts = retries + 1
@@ -155,8 +156,8 @@ final class DictionaryService {
             }
 
             do {
-                return try await OxfordScraper.lookup(word: word, session: session)
-            } catch OxfordError.blocked {
+                return try await CambridgeScraper.lookup(word: word, session: session)
+            } catch CambridgeError.blocked {
                 return nil  // blocked — don't retry, fall through to MW
             } catch {
                 lastError = error
@@ -321,6 +322,7 @@ final class DictionaryService {
             pronunciationAmE: nil,
             entries: [entry],
             nearbyWords: [],
+            corpusExamples: [],
             source: "Merriam-Webster"
         )
     }

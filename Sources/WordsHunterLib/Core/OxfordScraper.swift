@@ -3,12 +3,27 @@ import SwiftSoup
 
 // MARK: - Oxford Data Models
 
-/// A single sense (definition) from Oxford
+/// A single sense (definition) from Oxford or Cambridge
 struct OxfordSense: Equatable {
     let cefrLevel: String?          // "A1", "B2", "C1", etc.
     let definition: String          // "a person who is chosen or elected to..."
     let examples: [String]          // inline examples under this sense
     let extraExamples: [String]     // "Extra Examples" expandable section
+    let senseLabel: String?         // Cambridge: "GIVE", "CHOOSE PERSON", nil for noun
+    let grammar: String?            // Cambridge: "[I or T]", "[C]", "[T]"
+    let patterns: [String]          // Cambridge: ["delegate sth to sb", "delegate to"]
+
+    // Convenience init for Oxford and MW (no label/grammar/patterns)
+    init(cefrLevel: String?, definition: String, examples: [String], extraExamples: [String],
+         senseLabel: String? = nil, grammar: String? = nil, patterns: [String] = []) {
+        self.cefrLevel = cefrLevel
+        self.definition = definition
+        self.examples = examples
+        self.extraExamples = extraExamples
+        self.senseLabel = senseLabel
+        self.grammar = grammar
+        self.patterns = patterns
+    }
 }
 
 /// Collocation group (e.g. "adjective", "verb + delegate")
@@ -99,6 +114,7 @@ enum OxfordScraper {
             pronunciationAmE: pronunciationAmE,
             entries: allEntries,
             nearbyWords: nearbyWords,
+            corpusExamples: [],
             source: "Oxford Learner's Dictionary"
         )
     }

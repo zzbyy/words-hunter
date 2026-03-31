@@ -551,20 +551,20 @@ final class WordPageCreatorTests: XCTestCase {
     func testCreatePage_allSectionsPresent() {
         let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
         let content = makeTemplate(lemma: "posit", date: dateString)
-        for section in ["Sightings", "Meanings", "Collocations", "When to Use", "Word Family", "Nearby Words", "See Also", "Memory Tip"] {
+        for section in ["Sightings", "Definitions", "Corpus Examples", "When to Use", "Word Family", "See Also", "Memory Tip"] {
             XCTAssertTrue(content.contains("## \(section)"), "Missing section: \(section)")
         }
     }
 
-    func testCreatePage_oxfordVariables() {
+    func testCreatePage_cambridgeVariables() {
         let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
         let content = makeTemplate(lemma: "posit", date: dateString)
         XCTAssertTrue(content.contains("{{pronunciation-bre}}"), "Template must contain {{pronunciation-bre}}")
         XCTAssertTrue(content.contains("{{pronunciation-ame}}"), "Template must contain {{pronunciation-ame}}")
         XCTAssertTrue(content.contains("{{cefr}}"), "Template must contain {{cefr}}")
         XCTAssertTrue(content.contains("{{meanings}}"), "Template must contain {{meanings}}")
-        XCTAssertTrue(content.contains("{{collocations}}"), "Template must contain {{collocations}}")
-        XCTAssertTrue(content.contains("{{nearby-words}}"), "Template must contain {{nearby-words}}")
+        XCTAssertTrue(content.contains("{{corpus-examples}}"), "Template must contain {{corpus-examples}}")
+        XCTAssertTrue(content.contains("{{see-also}}"), "Template must contain {{see-also}}")
     }
 
     func testCreatePage_noFrontmatter() {
@@ -698,8 +698,8 @@ final class WordPageCreatorSeedTests: XCTestCase {
         XCTAssertTrue(content?.contains("{{pronunciation-bre}}") == true, "Seeded template must contain Oxford lookup variables")
     }
 
-    func testSeed_oldMWTemplate_migratesToOxfordFormat() throws {
-        // Simulate an MW-era template (has {{syllables}} but no Oxford vars)
+    func testSeed_oldMWTemplate_migratesToCambridgeFormat() throws {
+        // Simulate an MW-era template (has {{syllables}})
         let dotDir = tempVault.appendingPathComponent(".wordshunter")
         try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
         let mwTemplate = "# {{word}}\n\n**Syllables:** {{syllables}} · **Pronunciation:** {{pronunciation}}\n\n## Meanings\n{{meanings}}\n"
@@ -708,12 +708,26 @@ final class WordPageCreatorSeedTests: XCTestCase {
         WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
 
         let after = try String(contentsOf: templateURL, encoding: .utf8)
-        XCTAssertTrue(after.contains("{{pronunciation-bre}}"), "MW template must be migrated to Oxford format")
-        XCTAssertTrue(after.contains("{{collocations}}"), "Migrated template must contain {{collocations}}")
+        XCTAssertTrue(after.contains("{{pronunciation-bre}}"), "MW template must be migrated to Cambridge format")
+        XCTAssertTrue(after.contains("{{corpus-examples}}"), "Migrated template must contain {{corpus-examples}}")
         XCTAssertFalse(after.contains("{{syllables}}"), "Legacy {{syllables}} must be gone after migration")
     }
 
-    func testSeed_preVariableTemplate_migratesToOxfordFormat() throws {
+    func testSeed_oxfordTemplate_migratesToCambridgeFormat() throws {
+        // Simulate an Oxford-era template (has {{collocations}} but no {{corpus-examples}})
+        let dotDir = tempVault.appendingPathComponent(".wordshunter")
+        try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        let oxfordTemplate = "# {{word}}\n\n{{pronunciation-bre}}\n\n{{meanings}}\n\n{{collocations}}\n\n{{nearby-words}}\n"
+        try oxfordTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
+
+        let after = try String(contentsOf: templateURL, encoding: .utf8)
+        XCTAssertTrue(after.contains("{{corpus-examples}}"), "Oxford template must be migrated to Cambridge format")
+        XCTAssertFalse(after.contains("{{collocations}}"), "Legacy {{collocations}} must be gone after migration")
+    }
+
+    func testSeed_preVariableTemplate_migratesToCambridgeFormat() throws {
         // Simulate a pre-variable template (no lookup variables at all)
         let dotDir = tempVault.appendingPathComponent(".wordshunter")
         try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
@@ -723,14 +737,15 @@ final class WordPageCreatorSeedTests: XCTestCase {
         WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
 
         let after = try String(contentsOf: templateURL, encoding: .utf8)
-        XCTAssertTrue(after.contains("{{pronunciation-bre}}"), "Pre-variable template must be migrated to Oxford format")
+        XCTAssertTrue(after.contains("{{pronunciation-bre}}"), "Pre-variable template must be migrated to Cambridge format")
+        XCTAssertTrue(after.contains("{{corpus-examples}}"), "Migrated template must contain {{corpus-examples}}")
     }
 
-    func testSeed_oxfordTemplate_notOverwritten() throws {
-        // Simulate an already-current Oxford template — must not be touched
+    func testSeed_cambridgeTemplate_notOverwritten() throws {
+        // Simulate an already-current Cambridge template — must not be touched
         let dotDir = tempVault.appendingPathComponent(".wordshunter")
         try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
-        let customTemplate = "# {{word}}\n\n**Pronunciation:** {{pronunciation-bre}}\n\nMy custom section.\n"
+        let customTemplate = "# {{word}}\n\n**Pronunciation:** {{pronunciation-bre}}\n\n{{corpus-examples}}\n\nMy custom section.\n"
         try customTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
 
         WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
@@ -774,7 +789,8 @@ final class WordPageUpdaterTests: XCTestCase {
         pronunciationBrE: String? = "/ˈdelɪɡət/",
         pronunciationAmE: String? = "/ˈdelɪɡət/",
         entries: [OxfordEntry]? = nil,
-        nearbyWords: [NearbyWord] = []
+        nearbyWords: [NearbyWord] = [],
+        corpusExamples: [String] = []
     ) -> DictionaryContent {
         let defaultEntries = entries ?? [
             OxfordEntry(
@@ -800,11 +816,12 @@ final class WordPageUpdaterTests: XCTestCase {
             pronunciationAmE: pronunciationAmE,
             entries: defaultEntries,
             nearbyWords: nearbyWords,
-            source: "Oxford Learner's Dictionary"
+            corpusExamples: corpusExamples,
+            source: "Cambridge Dictionary"
         )
     }
 
-    // Base template using the new Oxford format
+    // Base template using the Cambridge format
     private let baseTemplate = """
     # delegate
 
@@ -815,8 +832,11 @@ final class WordPageUpdaterTests: XCTestCase {
 
     ---
 
-    ## Meanings
+    ## Definitions
     {{meanings}}
+
+    ## Corpus Examples
+    {{corpus-examples}}
 
     ## Collocations
     {{collocations}}
@@ -880,7 +900,8 @@ final class WordPageUpdaterTests: XCTestCase {
         let url = writeFile(name: "delegate.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeOxfordContent(), lemma: "delegate")
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("### 1. (noun) *(a person who is chosen or elected to represent the views of a group)* `C1`"))
+        // New format: definition as H3 heading with grammar and CEFR appended
+        XCTAssertTrue(updated.contains("### a person who is chosen or elected to represent the views of a group · C1"))
         XCTAssertFalse(updated.contains("{{meanings}}"))
     }
 
@@ -888,8 +909,9 @@ final class WordPageUpdaterTests: XCTestCase {
         let url = writeFile(name: "delegate.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeOxfordContent(), lemma: "delegate")
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("**Extra examples:**"))
-        XCTAssertTrue(updated.contains("*The delegates voted to support the resolution.*"))
+        // Extra examples are now plain bullet points with the lemma bolded
+        XCTAssertTrue(updated.contains("- The **delegates** voted to support the resolution."))
+        XCTAssertFalse(updated.contains("**Extra examples:**"))
     }
 
     func testUpdate_fillsCollocations() throws {
@@ -934,15 +956,17 @@ final class WordPageUpdaterTests: XCTestCase {
                 collocations: []
             )],
             nearbyWords: [],
+            corpusExamples: [],
             source: "Merriam-Webster"
         )
         let url = writeFile(name: "posit.md", content: baseTemplate.replacingOccurrences(of: "delegate", with: "posit"))
         try WordPageUpdater.update(at: url.path, with: mwContent, lemma: "posit")
         let updated = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(updated.contains("🇬🇧 /pə-ˈzit/"))
-        XCTAssertTrue(updated.contains("*(to assume or affirm"))
+        // New format: definition is H3 heading
+        XCTAssertTrue(updated.contains("### to assume or affirm the existence of : postulate"))
         XCTAssertTrue(updated.contains("**Level:** —"))  // no CEFR from MW
-        XCTAssertTrue(updated.contains("*(no collocations available)*"))
+        XCTAssertFalse(updated.contains("{{meanings}}"))
     }
 
     // MARK: Safety

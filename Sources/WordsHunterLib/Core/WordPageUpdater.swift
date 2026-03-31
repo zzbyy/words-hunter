@@ -62,18 +62,24 @@ enum WordPageUpdater {
             updated = updated.replacingOccurrences(of: "{{cefr}}", with: cefrLevel)
         }
 
-        // Fill {{meanings}} with numbered blocks (grouped by POS)
-        if updated.contains("{{meanings}}"), let meaningsBlock = buildMeaningsBlock(content: content) {
+        // Fill {{meanings}} — Cambridge-style: definition as heading, patterns, bolded examples
+        if updated.contains("{{meanings}}"), let meaningsBlock = buildMeaningsBlock(content: content, lemma: lemma) {
             updated = updated.replacingOccurrences(of: "{{meanings}}", with: meaningsBlock)
         }
 
-        // Fill {{collocations}}
+        // Fill {{corpus-examples}}
+        if updated.contains("{{corpus-examples}}") {
+            let corpusBlock = buildCorpusExamplesBlock(content: content, lemma: lemma)
+            updated = updated.replacingOccurrences(of: "{{corpus-examples}}", with: corpusBlock)
+        }
+
+        // Fill legacy {{collocations}} (Oxford/MW fallback — empty for Cambridge)
         if updated.contains("{{collocations}}") {
             let collocBlock = buildCollocationsBlock(content: content)
             updated = updated.replacingOccurrences(of: "{{collocations}}", with: collocBlock)
         }
 
-        // Fill {{nearby-words}}
+        // Fill legacy {{nearby-words}} (Oxford fallback — empty for Cambridge)
         if updated.contains("{{nearby-words}}") {
             let nearbyBlock = buildNearbyWordsBlock(content: content)
             updated = updated.replacingOccurrences(of: "{{nearby-words}}", with: nearbyBlock)
@@ -107,46 +113,87 @@ enum WordPageUpdater {
 
     // MARK: - Meanings block builder
 
-    /// Builds the numbered meaning blocks from dictionary content, grouped by POS.
-    /// Each sense includes CEFR level, definition, examples, and extra examples.
-    /// Returns nil when no definitions are found.
-    private static func buildMeaningsBlock(content: DictionaryContent) -> String? {
+    /// Builds definition blocks in the Cambridge learner format:
+    ///   ### Definition text · [grammar] · CEFR
+    ///   - **Patterns**: `pattern`
+    ///   - example with **word** bolded
+    private static func buildMeaningsBlock(content: DictionaryContent, lemma: String) -> String? {
         let allSenses = content.entries.flatMap { entry in
             entry.senses.map { (entry.pos, $0) }
         }
         guard !allSenses.isEmpty else { return nil }
 
         var blocks: [String] = []
-        for (index, (pos, sense)) in allSenses.enumerated() {
-            let num = index + 1
-            let posLabel = pos ?? ""
-            let cefrBadge = sense.cefrLevel.map { " `\($0)`" } ?? ""
+        for (_, sense) in allSenses {
+            var heading = sense.definition
 
-            var block = "\n### \(num). (\(posLabel)) *(\(sense.definition))*\(cefrBadge)\n"
-
-            // Inline examples
-            if !sense.examples.isEmpty {
-                for example in sense.examples {
-                    block += "\n> *\(example)*\n"
-                }
-            } else {
-                block += "\n> *()*\n"
+            // Append grammar and CEFR to heading
+            if let grammar = sense.grammar, !grammar.isEmpty {
+                heading += " · \(grammar)"
+            }
+            if let cefr = sense.cefrLevel {
+                heading += " · \(cefr)"
             }
 
-            // Extra examples
-            if !sense.extraExamples.isEmpty {
-                block += "\n**Extra examples:**\n"
-                for extra in sense.extraExamples {
-                    block += "- *\(extra)*\n"
+            var block = "\n### \(heading)\n\n"
+
+            // Patterns
+            if !sense.patterns.isEmpty {
+                block += "- **Patterns**:\n"
+                for pattern in sense.patterns {
+                    block += "  - `\(pattern)`\n"
                 }
             }
 
-            block += "\n**My sentence:**\n- \n"
-            block += "\n**Patterns:**\n- *(common word combinations and grammar patterns)*"
+            // Examples with bolded lemma forms
+            for example in sense.examples {
+                block += "- \(boldLemma(example, lemma: lemma))\n"
+            }
+
+            // Extra examples (Oxford / accordion)
+            for extra in sense.extraExamples {
+                block += "- \(boldLemma(extra, lemma: lemma))\n"
+            }
+
             blocks.append(block)
         }
 
-        return blocks.joined(separator: "\n\n") + "\n\n---\n"
+        return blocks.joined(separator: "\n---\n") + "\n\n---\n"
+    }
+
+    // MARK: - Corpus examples block builder
+
+    private static func buildCorpusExamplesBlock(content: DictionaryContent, lemma: String) -> String {
+        guard !content.corpusExamples.isEmpty else {
+            return "*(no corpus examples available)*"
+        }
+        return content.corpusExamples
+            .map { "- \(boldLemma($0, lemma: lemma))" }
+            .joined(separator: "\n")
+    }
+
+    // MARK: - Bold lemma helper
+
+    /// Bolds all surface forms of `lemma` in `text` (e.g. delegate → delegates, delegated).
+    private static func boldLemma(_ text: String, lemma: String) -> String {
+        guard !lemma.isEmpty else { return text }
+        let escaped = NSRegularExpression.escapedPattern(for: lemma)
+        guard let regex = try? NSRegularExpression(
+            pattern: "\\b(\(escaped)\\w*)",
+            options: .caseInsensitive
+        ) else { return text }
+
+        let nsText = text as NSString
+        let range = NSRange(location: 0, length: nsText.length)
+        var result = text
+        // Reverse order so replacement offsets stay valid
+        let matches = regex.matches(in: text, range: range).reversed()
+        for match in matches {
+            guard let swiftRange = Range(match.range(at: 1), in: result) else { continue }
+            let word = String(result[swiftRange])
+            result.replaceSubrange(swiftRange, with: "**\(word)**")
+        }
+        return result
     }
 
     // MARK: - Collocations block builder

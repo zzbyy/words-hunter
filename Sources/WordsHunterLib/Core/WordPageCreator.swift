@@ -14,13 +14,12 @@ struct WordPageCreator {
     /// - `{{word}}` — lowercased lemma (e.g. "posit")
     /// - `{{date}}` — capture date in YYYY-MM-DD format
     ///
-    /// **Lookup-time variables** (filled after the Oxford dictionary lookup completes):
+    /// **Lookup-time variables** (filled after the Cambridge dictionary lookup completes):
     /// - `{{pronunciation-bre}}` — British English IPA (e.g. "/ˈpɒz.ɪt/")
     /// - `{{pronunciation-ame}}` — American English IPA (e.g. "/ˈpɑː.zɪt/")
     /// - `{{cefr}}` — CEFR level badge (e.g. "B2")
-    /// - `{{meanings}}` — numbered meaning blocks from the dictionary response
-    /// - `{{collocations}}` — collocation groups (adjective, verb +, etc.)
-    /// - `{{nearby-words}}` — nearby dictionary words
+    /// - `{{meanings}}` — definition blocks (definition as heading, patterns, examples)
+    /// - `{{corpus-examples}}` — real-world usage from the Cambridge English Corpus
     /// - `{{see-also}}` — `[[wikilink]]` lines for related words found in the vault
     ///
     /// Any variable can be omitted from a custom template to opt out of that section being auto-filled.
@@ -35,11 +34,11 @@ struct WordPageCreator {
 
     ---
 
-    ## Meanings
+    ## Definitions
     {{meanings}}
 
-    ## Collocations
-    {{collocations}}
+    ## Corpus Examples
+    {{corpus-examples}}
 
     ---
 
@@ -53,11 +52,6 @@ struct WordPageCreator {
     ## Word Family
 
     *(list related forms, each with a short example)*
-
-    ---
-
-    ## Nearby Words
-    {{nearby-words}}
 
     ---
 
@@ -128,12 +122,20 @@ struct WordPageCreator {
     /// All lookup-time variable names used in the current template system.
     static let allLookupVariables = [
         "{{pronunciation-bre}}", "{{pronunciation-ame}}", "{{cefr}}",
-        "{{meanings}}", "{{collocations}}", "{{nearby-words}}", "{{see-also}}"
+        "{{meanings}}", "{{corpus-examples}}", "{{see-also}}",
+        // Legacy Oxford/MW variables — kept so old pages are still detected as fillable
+        "{{collocations}}", "{{nearby-words}}"
     ]
 
-    /// Legacy MW-era lookup variables (used for migration detection).
+    /// Legacy lookup variables (used for migration detection).
+    /// MW-era: {{syllables}}, {{pronunciation}}
+    /// Oxford-era: {{collocations}}, {{nearby-words}} (without {{corpus-examples}})
     private static let legacyMWVariables = [
         "{{syllables}}", "{{pronunciation}}"
+    ]
+
+    private static let legacyOxfordVariables = [
+        "{{collocations}}", "{{nearby-words}}"
     ]
 
     /// Writes the default template to `.wordshunter/template.md`.
@@ -150,16 +152,23 @@ struct WordPageCreator {
 
         if FileManager.default.fileExists(atPath: templateURL.path) {
             if let existing = try? String(contentsOf: templateURL, encoding: .utf8) {
+                // MW-era template → replace
                 let hasLegacyMWVar = legacyMWVariables.contains { existing.contains($0) }
                 if hasLegacyMWVar {
                     try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
                     return
                 }
+                // Oxford-era template (has collocations/nearby but no corpus-examples) → replace
+                let hasLegacyOxfordVar = legacyOxfordVariables.contains { existing.contains($0) }
+                let hasCambridgeVar = existing.contains("{{corpus-examples}}")
+                if hasLegacyOxfordVar && !hasCambridgeVar {
+                    try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                    return
+                }
+                // Current Cambridge template → leave untouched
+                if hasCambridgeVar { return }
 
-                let hasCurrentLookupVar = allLookupVariables.contains { existing.contains($0) }
-                if hasCurrentLookupVar { return }
-
-                // Otherwise it's either pre-variable or MW-era → overwrite with new template
+                // Pre-variable template → overwrite
                 try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
             }
             return
