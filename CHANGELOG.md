@@ -6,6 +6,20 @@ Format: [version] - YYYY-MM-DD
 
 ---
 
+## [1.7.1.0] - 2026-03-31
+
+### Fixed
+
+- **Template variable system** — auto-lookup now fills word pages reliably even after a custom template is saved. The updater previously matched hardcoded strings (`**Syllables:**`, `### 1. () *()*`) that disappeared when users edited the template; it now uses explicit template variables instead.
+- **Template auto-migration** — `template.md` is now migrated to the new variable format on every app launch (not only when Settings are saved), so users who rebuild the app without opening Preferences are no longer left with unfilled pages.
+- **Migration safety** — the migration heuristic checks for any lookup-time variable (not just `{{syllables}}`), so custom templates using `{{meanings}}` or `{{see-also}}` but not `{{syllables}}` are correctly preserved instead of being clobbered.
+- **Empty definitions guard** — `{{meanings}}` is no longer replaced with a blank `---` line when the MW API returns an entry with no definitions.
+- **Temp file cleanup** — if the atomic write fails mid-update, the `.tmp` file is now removed rather than left in the words folder.
+
+### Changed
+
+- **Template variable convention** — `template.md` now supports four lookup-time variables in addition to the existing `{{word}}` and `{{date}}`: `{{syllables}}`, `{{pronunciation}}`, `{{meanings}}`, and `{{see-also}}`. Any variable can be omitted to opt out of that section being auto-filled. Existing templates without these variables are migrated to the new default on next launch.
+
 ## [Unreleased]
 
 ### Added

@@ -5,9 +5,13 @@ import { wordsFolderPath, validateWord, assertInVault } from '../vault.js';
 import { masteryJsonPath, readMasteryStore, writeMasteryStore } from '../vault.js';
 import { todayString } from '../srs/scheduler.js';
 
+// Template variable reference:
+//   Creation-time (filled on page creation):  {{word}}, {{date}}
+//   Lookup-time   (filled after MW lookup):    {{syllables}}, {{pronunciation}}, {{meanings}}, {{see-also}}
+// Any variable can be omitted from a custom template to opt out of that section.
 const DEFAULT_TEMPLATE = `# {{word}}
 
-**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+**Syllables:** {{syllables}} · **Pronunciation:** {{pronunciation}}
 
 ## Sightings
 - {{date}} — *(context sentence where you saw the word)*
@@ -15,18 +19,7 @@ const DEFAULT_TEMPLATE = `# {{word}}
 ---
 
 ## Meanings
-
-### 1. () *()*
-
-> *()*
-
-**My sentence:**
-- *(write your own sentence using this word)*
-
-**Patterns:**
-- *(common word combinations and grammar patterns)*
-
----
+{{meanings}}
 
 ## When to Use
 
@@ -42,7 +35,7 @@ const DEFAULT_TEMPLATE = `# {{word}}
 ---
 
 ## See Also
-*(link to other captured words with a note on how they differ)*
+{{see-also}}
 
 ---
 

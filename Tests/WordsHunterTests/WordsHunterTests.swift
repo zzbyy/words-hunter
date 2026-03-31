@@ -311,10 +311,10 @@ final class WordPageCreatorTests: XCTestCase {
         }
     }
 
-    func testCreatePage_meaningPlaceholder() {
+    func testCreatePage_meaningsVariable() {
         let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
         let content = makeTemplate(lemma: "posit", date: dateString)
-        XCTAssertTrue(content.contains("### 1. () *()*"))
+        XCTAssertTrue(content.contains("{{meanings}}"), "Template must contain {{meanings}} lookup variable")
     }
 
     func testCreatePage_noFrontmatter() {
@@ -346,12 +346,12 @@ final class WordPageCreatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
-    // Helper that reproduces the template string from WordPageCreator
+    // Helper that reproduces the template string from WordPageCreator (variable-based format)
     private func makeTemplate(lemma: String, date: String) -> String {
         """
         # \(lemma)
 
-        **Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+        **Syllables:** {{syllables}} · **Pronunciation:** {{pronunciation}}
 
         ## Sightings
         - \(date) — *(context sentence where you saw the word)*
@@ -359,18 +359,7 @@ final class WordPageCreatorTests: XCTestCase {
         ---
 
         ## Meanings
-
-        ### 1. () *()*
-
-        > *()*
-
-        **My sentence:**
-        - *(write your own sentence using this word)*
-
-        **Patterns:**
-        - *(common word combinations and grammar patterns)*
-
-        ---
+        {{meanings}}
 
         ## When to Use
 
@@ -386,7 +375,7 @@ final class WordPageCreatorTests: XCTestCase {
         ---
 
         ## See Also
-        *(link to other captured words with a note on how they differ)*
+        {{see-also}}
 
         ---
 
@@ -416,6 +405,85 @@ final class WordPageCreatorRegressionTests: XCTestCase {
         let folderURL = settings.wordsFolderURL
         XCTAssertEqual(folderURL?.path, tempVault.path,
                        "useWordFolder=false should return vault root, not a subfolder")
+    }
+}
+
+// MARK: - WordPageCreator seedTemplateIfNeeded Tests
+
+final class WordPageCreatorSeedTests: XCTestCase {
+
+    private var tempVault: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempVault = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempVault, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempVault)
+        super.tearDown()
+    }
+
+    private var templateURL: URL {
+        tempVault.appendingPathComponent(".wordshunter").appendingPathComponent("template.md")
+    }
+
+    func testSeed_noExistingFile_createsTemplate() {
+        XCTAssertFalse(FileManager.default.fileExists(atPath: templateURL.path))
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: templateURL.path))
+        let content = try? String(contentsOf: templateURL, encoding: .utf8)
+        XCTAssertTrue(content?.contains("{{syllables}}") == true, "Seeded template must contain lookup variables")
+    }
+
+    func testSeed_oldFormatTemplate_migratesToNewFormat() throws {
+        // Simulate a pre-variable template (old format) — no lookup variables at all
+        let dotDir = tempVault.appendingPathComponent(".wordshunter")
+        try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        let oldTemplate = "# {{word}}\n\n**Syllables:** *(e.g. po·sit)*\n\n## Meanings\n\n### 1. () *()*\n"
+        try oldTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
+
+        let after = try String(contentsOf: templateURL, encoding: .utf8)
+        // The new default contains all lookup variables
+        XCTAssertTrue(after.contains("{{syllables}}"), "Old template must be migrated to new variable format")
+        XCTAssertTrue(after.contains("{{meanings}}"), "Migrated template must contain {{meanings}}")
+        XCTAssertFalse(after.contains("### 1. () *()*"), "Old meaning placeholder must be gone after migration")
+    }
+
+    func testSeed_newFormatTemplate_notOverwritten() throws {
+        // Simulate an already-migrated template — must not be touched
+        let dotDir = tempVault.appendingPathComponent(".wordshunter")
+        try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        let customTemplate = "# {{word}}\n\n**Syllables:** {{syllables}}\n\nMy custom section.\n"
+        try customTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
+
+        let after = try String(contentsOf: templateURL, encoding: .utf8)
+        XCTAssertEqual(after, customTemplate, "New-format template with {{syllables}} must not be overwritten")
+    }
+
+    func testSeed_partialVariableTemplate_notOverwritten() throws {
+        // Template with only {{meanings}} and no {{syllables}} — still a valid new-format template
+        let dotDir = tempVault.appendingPathComponent(".wordshunter")
+        try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        let partialTemplate = "# {{word}}\n\n## Meanings\n{{meanings}}\n\nMy minimal layout.\n"
+        try partialTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
+
+        let after = try String(contentsOf: templateURL, encoding: .utf8)
+        XCTAssertEqual(after, partialTemplate, "Custom template with any lookup variable must not be overwritten")
+    }
+
+    func testSeed_emptyVaultPath_noOp() {
+        // Must not crash or create anything when vault path is empty
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: templateURL.path))
     }
 }
 
@@ -460,10 +528,11 @@ final class WordPageUpdaterTests: XCTestCase {
         )
     }
 
+    // Base template using the new lookup-time variable format
     private let baseTemplate = """
     # posit
 
-    **Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+    **Syllables:** {{syllables}} · **Pronunciation:** {{pronunciation}}
 
     ## Sightings
     - 2026-03-28 — *(context sentence where you saw the word)*
@@ -471,18 +540,7 @@ final class WordPageUpdaterTests: XCTestCase {
     ---
 
     ## Meanings
-
-    ### 1. () *()*
-
-    > *()*
-
-    **My sentence:**
-    - *(write your own sentence using this word)*
-
-    **Patterns:**
-    - *(common word combinations and grammar patterns)*
-
-    ---
+    {{meanings}}
 
     ## When to Use
 
@@ -498,7 +556,7 @@ final class WordPageUpdaterTests: XCTestCase {
     ---
 
     ## See Also
-    *(link to other captured words with a note on how they differ)*
+    {{see-also}}
 
     ---
 
@@ -521,8 +579,8 @@ final class WordPageUpdaterTests: XCTestCase {
         try WordPageUpdater.update(at: url.path, with: makeContent(pronunciation: "pə-ˈzit"), lemma: "posit")
 
         let updated = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(updated.contains("**Pronunciation:** /pə-ˈzit/"))
-        XCTAssertFalse(updated.contains("*(e.g. /ˈpɒz.ɪt/)*"), "Placeholder must be replaced")
+        XCTAssertTrue(updated.contains("/pə-ˈzit/"))
+        XCTAssertFalse(updated.contains("{{pronunciation}}"), "Variable must be replaced")
     }
 
     func testUpdate_nilPronunciation_emptyDisplay() throws {
@@ -547,7 +605,7 @@ final class WordPageUpdaterTests: XCTestCase {
 
         let updated = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(updated.contains("### 1. (verb) *(to assume or affirm the existence of : postulate)*"))
-        XCTAssertFalse(updated.contains("### 1. () *()*"), "Placeholder must be replaced")
+        XCTAssertFalse(updated.contains("{{meanings}}"), "Variable must be replaced")
     }
 
     func testUpdate_multipleDefinitions_generatesNumberedHeadings() throws {
@@ -601,20 +659,87 @@ final class WordPageUpdaterTests: XCTestCase {
         XCTAssertEqual(after, oldTemplate, "Old-format pages must not be touched")
     }
 
-    // MARK: Safety: user already edited
+    // MARK: Safety: page already filled (no lookup variables remain)
 
-    func testUpdate_userEditedMeaning_abortsWithoutChanging() throws {
-        var template = baseTemplate
-        template = template.replacingOccurrences(
-            of: "### 1. () *()*",
-            with: "### 1. (noun) *(my own definition)*"
-        )
-        let url = writeFile(name: "posit.md", content: template)
+    func testUpdate_pageAlreadyFilled_abortsWithoutChanging() throws {
+        // Simulate a page that was already filled by a prior lookup — no {{...}} variables remain
+        let filledPage = """
+        # posit
+
+        **Syllables:** pos·it · **Pronunciation:** /pə-ˈzit/
+
+        ## Sightings
+        - 2026-03-28 — *(context sentence where you saw the word)*
+
+        ---
+
+        ## Meanings
+
+        ### 1. (verb) *(to assume or affirm the existence of : postulate)*
+
+        > *(philosophers who posit a mechanical universe)*
+
+        **My sentence:**
+        -
+
+        **Patterns:**
+        - *(common word combinations and grammar patterns)*
+
+        ## See Also
+        - [[assume]]
+        """
+        let url = writeFile(name: "posit.md", content: filledPage)
         try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
 
         let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("my own definition"), "User-edited meaning must not be overwritten")
-        XCTAssertFalse(after.contains("to assume or affirm"))
+        XCTAssertEqual(after, filledPage, "Already-filled page (no lookup vars) must not be touched")
+    }
+
+    // MARK: Variable coverage
+
+    func testUpdate_allLookupVarsReplaced() throws {
+        let url = writeFile(name: "posit.md", content: baseTemplate)
+        try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(after.contains("{{syllables}}"), "{{syllables}} must be replaced")
+        XCTAssertFalse(after.contains("{{pronunciation}}"), "{{pronunciation}} must be replaced")
+        XCTAssertFalse(after.contains("{{meanings}}"), "{{meanings}} must be replaced")
+        XCTAssertFalse(after.contains("{{see-also}}"), "{{see-also}} must be replaced")
+    }
+
+    func testUpdate_partialVariables_onlyFillsPresent() throws {
+        // Template with only {{syllables}} — other vars absent (user opted out)
+        let partialTemplate = """
+        # posit
+
+        **Syllables:** {{syllables}}
+
+        ## Sightings
+        - 2026-03-28 — *(sentence)*
+        """
+        let url = writeFile(name: "posit.md", content: partialTemplate)
+        try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(after.contains("{{syllables}}"), "{{syllables}} must be replaced")
+        XCTAssertFalse(after.contains("{{pronunciation}}"), "No {{pronunciation}} var — nothing to replace")
+        XCTAssertFalse(after.contains("{{meanings}}"), "No {{meanings}} var — nothing to replace")
+    }
+
+    func testUpdate_noLookupVars_abortsGracefully() throws {
+        // Old-format page without any lookup variables — updater must not touch it
+        let oldFormat = """
+        # posit
+
+        **Syllables:** po·sit · **Pronunciation:** /pə-ˈzit/
+
+        ## Meanings
+
+        ### 1. (verb) *(already filled manually)*
+        """
+        let url = writeFile(name: "posit.md", content: oldFormat)
+        try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
+        let after = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(after, oldFormat, "Page without lookup vars must not be modified")
     }
 
     // MARK: Safety: file deleted between createPage and update
@@ -632,24 +757,24 @@ final class WordPageUpdaterTests: XCTestCase {
 
     // MARK: See Also auto-fill
 
-    func testUpdate_seeAlsoAutoFilled() throws {
-        try "existing content".write(
-            to: tempDir.appendingPathComponent("assume.md"),
-            atomically: true, encoding: .utf8
-        )
+    func testUpdate_seeAlsoVariableAlwaysReplaced() throws {
+        // Regardless of vault scan results, {{see-also}} must be replaced (never left as a raw variable)
         let url = writeFile(name: "posit.md", content: baseTemplate)
-
         let content = makeContent(definitions: ["to assume or affirm the existence of : postulate"])
         try WordPageUpdater.update(at: url.path, with: content, lemma: "posit")
         let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("to assume or affirm the existence of : postulate"))
+        XCTAssertFalse(after.contains("{{see-also}}"), "{{see-also}} variable must always be replaced after lookup")
+        // Either the fallback text or wikilinks should be present
+        let hasSeeAlsoContent = after.contains("*(no related words found yet)*") || after.contains("[[")
+        XCTAssertTrue(hasSeeAlsoContent, "See Also section must contain actual content after fill")
     }
 
-    func testUpdate_noRelatedWords_seeAlsoPlaceholderUnchanged() throws {
+    func testUpdate_noRelatedWords_seeAlsoShowsFallback() throws {
         let url = writeFile(name: "posit.md", content: baseTemplate)
         try WordPageUpdater.update(at: url.path, with: makeContent(), lemma: "posit")
         let after = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(after.contains("*(link to other captured words with a note on how they differ)*"))
+        XCTAssertTrue(after.contains("*(no related words found yet)*"))
+        XCTAssertFalse(after.contains("{{see-also}}"), "Variable must be replaced even when no matches found")
     }
 }
 
