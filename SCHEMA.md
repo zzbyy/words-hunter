@@ -13,29 +13,32 @@ Filename: `{lemma.lowercased()}.md`.
 Both sides read the user-editable template at `.wordshunter/template.md` (falling back to a
 built-in default). Placeholders: `{{word}}` (lemma) and `{{date}}` (YYYY-MM-DD).
 
+**Lookup-time variables** (filled after the Oxford Learner's Dictionary lookup completes):
+- `{{pronunciation-bre}}` — British English IPA
+- `{{pronunciation-ame}}` — American English IPA
+- `{{cefr}}` — CEFR level badge (e.g. "B2")  
+- `{{meanings}}` — numbered meaning blocks with CEFR per sense, examples, extra examples
+- `{{collocations}}` — collocation groups from the Oxford Collocations Dictionary
+- `{{nearby-words}}` — nearby dictionary words with POS
+- `{{see-also}}` — `[[wikilink]]` lines for related words found in the vault
+
 ### Default Template
 
 ```markdown
-# {word}
+# {{word}}
 
-**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+**Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
 
 ## Sightings
-- {YYYY-MM-DD} — *(context sentence where you saw the word)*
+- {{date}} — *(context sentence where you saw the word)*
 
 ---
 
 ## Meanings
+{{meanings}}
 
-### 1. () *()*
-
-> *()*
-
-**My sentence:**
-- *(write your own sentence using this word)*
-
-**Patterns:**
-- *(common word combinations and grammar patterns)*
+## Collocations
+{{collocations}}
 
 ---
 
@@ -52,8 +55,13 @@ built-in default). Placeholders: `{{word}}` (lemma) and `{{date}}` (YYYY-MM-DD).
 
 ---
 
+## Nearby Words
+{{nearby-words}}
+
+---
+
 ## See Also
-*(link to other captured words with a note on how they differ)*
+{{see-also}}
 
 ---
 

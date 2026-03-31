@@ -4,9 +4,12 @@ import Foundation
 /// dictionary data, and writes back atomically.
 ///
 /// **Template variables filled here:**
-/// - `{{syllables}}` — syllable breakdown (e.g. "po·sit")
-/// - `{{pronunciation}}` — IPA string (e.g. "/ˈpɒz.ɪt/")
-/// - `{{meanings}}` — numbered meaning blocks from the MW API response
+/// - `{{pronunciation-bre}}` — British English IPA (e.g. "/ˈdelɪɡət/")
+/// - `{{pronunciation-ame}}` — American English IPA (e.g. "/ˈdelɪɡət/")
+/// - `{{cefr}}` — CEFR level badge (e.g. "B2")
+/// - `{{meanings}}` — numbered meaning blocks with CEFR per sense and extra examples
+/// - `{{collocations}}` — collocation groups (adjective, verb +, etc.)
+/// - `{{nearby-words}}` — nearby dictionary words with POS
 /// - `{{see-also}}` — `[[wikilink]]` lines for related words found in the vault
 ///
 /// Safety checks:
@@ -31,14 +34,14 @@ enum WordPageUpdater {
             return  // unreadable — abort silently
         }
 
-        // Guard: abort if no lookup-time variables are present (old format or user opted out)
-        let hasLookupVars = text.contains("{{syllables}}") || text.contains("{{pronunciation}}")
-            || text.contains("{{meanings}}") || text.contains("{{see-also}}")
+        // Guard: abort if no lookup-time variables are present
+        let hasLookupVars = WordPageCreator.allLookupVariables.contains { text.contains($0) }
         guard hasLookupVars else { return }
 
         // Scan vault for related words (needed for {{see-also}})
-        let scanText = content.definitions.joined(separator: " ")
-            + " " + content.examples.joined(separator: " ")
+        let allDefinitions = content.entries.flatMap { $0.senses.map { $0.definition } }
+        let allExamples = content.entries.flatMap { $0.senses.flatMap { $0.examples } }
+        let scanText = (allDefinitions + allExamples).joined(separator: " ")
         let relatedWords = VaultScanner.scan(
             definitionText: scanText,
             wordsFolderURL: AppSettings.shared.wordsFolderURL,
@@ -47,16 +50,33 @@ enum WordPageUpdater {
 
         var updated = text
 
-        // Fill {{syllables}} and {{pronunciation}}
-        let syllableDisplay = content.headword?
-            .replacingOccurrences(of: "*", with: "·") ?? lemma
-        let pronunciationDisplay = content.pronunciation.map { "/\($0)/" } ?? ""
-        updated = updated.replacingOccurrences(of: "{{syllables}}", with: syllableDisplay)
-        updated = updated.replacingOccurrences(of: "{{pronunciation}}", with: pronunciationDisplay)
+        // Fill {{pronunciation-bre}} and {{pronunciation-ame}}
+        let brePron = content.pronunciationBrE ?? ""
+        let amePron = content.pronunciationAmE ?? ""
+        updated = updated.replacingOccurrences(of: "{{pronunciation-bre}}", with: brePron)
+        updated = updated.replacingOccurrences(of: "{{pronunciation-ame}}", with: amePron)
 
-        // Fill {{meanings}} with numbered blocks (only when definitions are available)
+        // Fill {{cefr}} — use the highest-level CEFR from entries
+        if updated.contains("{{cefr}}") {
+            let cefrLevel = extractBestCEFR(from: content)
+            updated = updated.replacingOccurrences(of: "{{cefr}}", with: cefrLevel)
+        }
+
+        // Fill {{meanings}} with numbered blocks (grouped by POS)
         if updated.contains("{{meanings}}"), let meaningsBlock = buildMeaningsBlock(content: content) {
             updated = updated.replacingOccurrences(of: "{{meanings}}", with: meaningsBlock)
+        }
+
+        // Fill {{collocations}}
+        if updated.contains("{{collocations}}") {
+            let collocBlock = buildCollocationsBlock(content: content)
+            updated = updated.replacingOccurrences(of: "{{collocations}}", with: collocBlock)
+        }
+
+        // Fill {{nearby-words}}
+        if updated.contains("{{nearby-words}}") {
+            let nearbyBlock = buildNearbyWordsBlock(content: content)
+            updated = updated.replacingOccurrences(of: "{{nearby-words}}", with: nearbyBlock)
         }
 
         // Fill {{see-also}} with vault links
@@ -85,24 +105,100 @@ enum WordPageUpdater {
         }
     }
 
-    // MARK: - Private helpers
+    // MARK: - Meanings block builder
 
-    /// Builds the numbered meaning blocks from dictionary content.
-    /// Returns nil when `content.definitions` is empty (no data to fill).
+    /// Builds the numbered meaning blocks from dictionary content, grouped by POS.
+    /// Each sense includes CEFR level, definition, examples, and extra examples.
+    /// Returns nil when no definitions are found.
     private static func buildMeaningsBlock(content: DictionaryContent) -> String? {
-        guard !content.definitions.isEmpty else { return nil }
-        let pos = content.pos ?? ""
+        let allSenses = content.entries.flatMap { entry in
+            entry.senses.map { (entry.pos, $0) }
+        }
+        guard !allSenses.isEmpty else { return nil }
+
         var blocks: [String] = []
-        for (index, def) in content.definitions.enumerated() {
+        for (index, (pos, sense)) in allSenses.enumerated() {
             let num = index + 1
-            let example = index < content.examples.count ? content.examples[index] : ""
-            var block = "\n### \(num). (\(pos)) *(\(def))*\n"
-            block += "\n> *(\(example))*\n"
+            let posLabel = pos ?? ""
+            let cefrBadge = sense.cefrLevel.map { " `\($0)`" } ?? ""
+
+            var block = "\n### \(num). (\(posLabel)) *(\(sense.definition))*\(cefrBadge)\n"
+
+            // Inline examples
+            if !sense.examples.isEmpty {
+                for example in sense.examples {
+                    block += "\n> *\(example)*\n"
+                }
+            } else {
+                block += "\n> *()*\n"
+            }
+
+            // Extra examples
+            if !sense.extraExamples.isEmpty {
+                block += "\n**Extra examples:**\n"
+                for extra in sense.extraExamples {
+                    block += "- *\(extra)*\n"
+                }
+            }
+
             block += "\n**My sentence:**\n- \n"
             block += "\n**Patterns:**\n- *(common word combinations and grammar patterns)*"
             blocks.append(block)
         }
+
         return blocks.joined(separator: "\n\n") + "\n\n---\n"
+    }
+
+    // MARK: - Collocations block builder
+
+    /// Builds the collocations section from grouped collocation data.
+    private static func buildCollocationsBlock(content: DictionaryContent) -> String {
+        let allCollocations = content.entries.flatMap { $0.collocations }
+        guard !allCollocations.isEmpty else {
+            return "*(no collocations available)*"
+        }
+
+        var lines: [String] = []
+        for group in allCollocations {
+            lines.append("**\(group.label):**")
+            let itemList = group.items.map { "· \($0)" }.joined(separator: " ")
+            lines.append(itemList)
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Nearby words block builder
+
+    /// Builds the nearby words section from nearby word data.
+    private static func buildNearbyWordsBlock(content: DictionaryContent) -> String {
+        guard !content.nearbyWords.isEmpty else {
+            return "*(no nearby words available)*"
+        }
+
+        return content.nearbyWords.map { nearby in
+            let posLabel = nearby.pos.map { " *\($0)*" } ?? ""
+            return "- \(nearby.word)\(posLabel)"
+        }.joined(separator: "\n")
+    }
+
+    // MARK: - CEFR helpers
+
+    /// Extract the best (most common) CEFR level from the content.
+    /// Prefers word-level CEFR from entries, falls back to sense-level.
+    private static func extractBestCEFR(from content: DictionaryContent) -> String {
+        // Try entry-level CEFR first
+        for entry in content.entries {
+            if let level = entry.cefrLevel { return level }
+        }
+        // Fall back to first sense-level CEFR
+        for entry in content.entries {
+            for sense in entry.senses {
+                if let level = sense.cefrLevel { return level }
+            }
+        }
+        return "—"
     }
 
     // MARK: - Generic section helpers

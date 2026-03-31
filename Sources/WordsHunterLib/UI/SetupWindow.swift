@@ -64,9 +64,10 @@ final class SetupViewController: NSViewController {
 
     private let lookupEnabledToggle = NSButton(checkboxWithTitle: "Enable auto-lookup", target: nil, action: nil)
 
+    // MW fallback controls
     private let mwApiKeyField: NSTextField = {
         let f = NSTextField()
-        f.placeholderString = "Paste your Merriam-Webster key here"
+        f.placeholderString = "Paste your Merriam-Webster key here (optional)"
         f.bezelStyle = .roundedBezel
         return f
     }()
@@ -112,6 +113,25 @@ final class SetupViewController: NSViewController {
         b.bezelStyle = .rounded
         b.keyEquivalent = "\r"
         return b
+    }()
+
+    // Fallback section disclosure
+    private lazy var fallbackDisclosure: NSButton = {
+        let b = NSButton(title: "Fallback: Merriam-Webster (optional)", target: self, action: #selector(toggleFallback))
+        b.bezelStyle = .disclosure
+        b.setButtonType(.pushOnPushOff)
+        b.state = .off
+        b.font = NSFont.systemFont(ofSize: 11)
+        return b
+    }()
+
+    private let fallbackStack: NSStackView = {
+        let s = NSStackView()
+        s.orientation = .vertical
+        s.alignment = .leading
+        s.spacing = 6
+        s.isHidden = true
+        return s
     }()
 
     // MARK: - View lifecycle
@@ -170,7 +190,6 @@ final class SetupViewController: NSViewController {
                                width: boxWidth)
 
         // ── Word Location box ──
-        // Indent the folder field 20pt with a leading spacer
         let folderRow = hstack([spacer(20), wordFolderField])
         let locationBox = makeBox(title: "Word Location",
                                   rows: [useWordFolderToggle, folderRow],
@@ -180,8 +199,10 @@ final class SetupViewController: NSViewController {
         let docText = NSTextField(wrappingLabelWithString:
             """
             📖 Dictionary Lookup
-            When enabled, Words Hunter quietly fetches a definition from Merriam-Webster \
-            after capturing a word — you'll find it waiting in the word's page.
+            When enabled, Words Hunter quietly fetches definitions from the Oxford \
+            Learner's Dictionary after capturing a word — you'll find them waiting \
+            in the word's page, including pronunciation, CEFR level, example \
+            sentences, and collocations.
 
             💡 Research shows that writing your own definition strengthens memory far more \
             than reading one. Use this as a starting scaffold — the learning happens when \
@@ -191,22 +212,34 @@ final class SetupViewController: NSViewController {
         docText.font = NSFont.systemFont(ofSize: 11)
         docText.preferredMaxLayoutWidth = boxWidth - 24  // inset for box margins
 
+        // MW fallback subsection
+        let fallbackNote = NSTextField(wrappingLabelWithString:
+            "If Oxford is unavailable, Words Hunter can fall back to Merriam-Webster. Paste your free API key below to enable this.")
+        fallbackNote.textColor = .tertiaryLabelColor
+        fallbackNote.font = NSFont.systemFont(ofSize: 10)
+        fallbackNote.preferredMaxLayoutWidth = boxWidth - 44
+
         let apiKeyLabel = label("MW API Key:")
         mwApiKeyField.setAccessibilityLabel("Merriam-Webster API key")
 
         retriesValueLabel.setContentHuggingPriority(.required, for: .horizontal)
         retriesStepper.setAccessibilityLabel("Lookup retries")
 
+        for v in [fallbackNote,
+                  hstack([apiKeyLabel, mwApiKeyField]),
+                  hstack([label("Max retries:"), retriesStepper, retriesValueLabel]),
+                  linkButton] {
+            fallbackStack.addArrangedSubview(v)
+        }
+
         let lookupBox = makeBox(title: "Dictionary Lookup", rows: [
             docText,
             lookupEnabledToggle,
-            hstack([apiKeyLabel, mwApiKeyField]),
-            hstack([label("Max retries:"), retriesStepper, retriesValueLabel]),
-            linkButton
+            fallbackDisclosure,
+            fallbackStack
         ], width: boxWidth)
 
         // ── Outer stack ──
-        // Items pinned to the stack's width via matchWidth constraints added in makeBox.
         let outerStack = NSStackView()
         outerStack.orientation = .vertical
         outerStack.alignment = .leading
@@ -240,6 +273,12 @@ final class SetupViewController: NSViewController {
         retriesStepper.intValue = Int32(s.lookupRetries)
         retriesValueLabel.stringValue = "\(s.lookupRetries)"
         if s.isSetupComplete { startBtn.title = "Save Settings" }
+
+        // Auto-expand fallback section if MW key is already configured
+        if !s.mwApiKey.isEmpty {
+            fallbackDisclosure.state = .on
+            fallbackStack.isHidden = false
+        }
     }
 
     // MARK: - Interaction state
@@ -250,6 +289,8 @@ final class SetupViewController: NSViewController {
 
     private func updateLookupState() {
         let on = lookupEnabledToggle.state == .on
+        fallbackDisclosure.isEnabled = on
+        fallbackStack.isHidden = !on || fallbackDisclosure.state == .off
         linkButton.isEnabled = on
     }
 
@@ -268,6 +309,17 @@ final class SetupViewController: NSViewController {
 
     @objc private func wordFolderToggleChanged() { updateWordFolderState() }
     @objc private func lookupToggleChanged()      { updateLookupState() }
+
+    @objc private func toggleFallback() {
+        let expanded = fallbackDisclosure.state == .on
+        fallbackStack.isHidden = !expanded
+
+        // Resize window to fit content
+        if let window = view.window {
+            let size = view.fittingSize
+            window.setContentSize(size)
+        }
+    }
 
     @objc private func retriesStepperChanged() {
         let val = Int(retriesStepper.intValue)
@@ -374,4 +426,3 @@ final class SetupViewController: NSViewController {
         return v
     }
 }
-

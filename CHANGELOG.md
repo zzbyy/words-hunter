@@ -6,6 +6,34 @@ Format: [version] - YYYY-MM-DD
 
 ---
 
+## [1.8.0.0] - 2026-03-31
+
+### Added
+
+- **Oxford Learner's Dictionary integration** — primary dictionary source, no API key required. Scrapes the public OALD page to extract:
+  - British *and* American English pronunciation (IPA)
+  - CEFR level badges (A1–C2) per word and per sense
+  - Example sentences + Extra Examples
+  - Oxford Collocations Dictionary data (adjective, verb +, etc.)
+  - Nearby dictionary words
+- **Multi-entry merging** — words with multiple POS entries (e.g., "delegate" noun + verb) are fetched and combined into a single word page
+- **Anti-detection resilience** — realistic User-Agent, Accept-Language headers, random 0.5–2.0s jitter between requests, serialized scraping queue
+- **Merriam-Webster as fallback** — MW API key is now optional; if configured, MW is tried when Oxford fails. MW results are adapted into the same unified data model.
+- **New template variables:** `{{pronunciation-bre}}`, `{{pronunciation-ame}}`, `{{cefr}}`, `{{collocations}}`, `{{nearby-words}}`
+
+### Changed
+
+- **Default template redesigned** — now shows BrE/AmE pronunciation, CEFR level, collocations section, and nearby words. Legacy MW variables (`{{syllables}}`, `{{pronunciation}}`) are replaced.
+- **Auto-lookup enabled by default** — new installs get dictionary lookup out of the box (Oxford needs no API key)
+- **Settings UI simplified** — Oxford is the default source with no configuration needed. MW API key field moved to a collapsible "Fallback" disclosure section.
+- **Template migration** — `seedTemplateIfNeeded` detects old MW-era templates and auto-migrates to the new Oxford format
+
+### Removed
+
+- `{{syllables}}` template variable (Oxford doesn't provide syllable breaks; pronunciation field now shows full IPA)
+
+---
+
 ## [1.7.1.0] - 2026-03-31
 
 ### Fixed

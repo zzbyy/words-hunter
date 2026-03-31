@@ -1,5 +1,18 @@
 import Foundation
 
+// MARK: - DictionaryContent (unified model)
+
+/// Unified dictionary content model used by both Oxford (primary) and MW (fallback).
+/// Oxford fills all fields; MW fills a subset (no CEFR, collocations, extra examples).
+struct DictionaryContent {
+    let headword: String
+    let pronunciationBrE: String?   // "/ˈdelɪɡət/"
+    let pronunciationAmE: String?   // "/ˈdelɪɡət/"
+    let entries: [OxfordEntry]      // one per POS (noun, verb, etc.)
+    let nearbyWords: [NearbyWord]
+    let source: String              // "Oxford Learner's Dictionary" or "Merriam-Webster"
+}
+
 // MARK: - URLSession protocol for testability
 
 protocol URLSessionProtocol {
@@ -8,36 +21,51 @@ protocol URLSessionProtocol {
 
 extension URLSession: URLSessionProtocol {}
 
-// MARK: - DictionaryContent
+// MARK: - Legacy MW response (internal, for adapter)
 
-struct DictionaryContent {
-    let definitions: [String]       // all shortdefs from first entry
-    let examples: [String]          // verbal illustrations from def.sseq.sense.dt.vis
-    let pos: String?                // functional label from `fl` field
-    let pronunciation: String?      // MW phonetic notation from `hwi.prs[0].mw`
-    let headword: String?           // syllable-separated hw from hwi.hw, e.g. "pos*it"
-    let source: String
+/// Raw MW API response — kept for fallback parsing, then adapted to DictionaryContent.
+struct MWRawContent {
+    let definitions: [String]
+    let examples: [String]
+    let pos: String?
+    let pronunciation: String?
+    let headword: String?
 }
 
 // MARK: - DictionaryService
 
-/// Fetches definitions from the Merriam-Webster Collegiate Dictionary API.
-/// Runs lookups as cancellable background Tasks. Lookup is fire-and-forget:
-/// success silently updates the word page; failure leaves the blank template.
+/// Orchestrates dictionary lookups with Oxford as primary and MW as fallback.
+///
+/// Priority chain:
+///   1. Oxford Learner's Dictionary (HTML scraping, no API key needed)
+///   2. Merriam-Webster Collegiate API (if API key is configured)
+///   3. Blank template (silent failure)
 ///
 /// Architecture:
 ///   startLookup(word:at:)
 ///       │
-///       ├── guard lookupEnabled && !mwApiKey.isEmpty → return early
+///       ├── guard lookupEnabled → return early
 ///       ├── cancel any existing Task for this word
-///       └── Task { retry loop → URLSession → JSON parse → WordPageUpdater }
-///               │
-///               └── defer { lookupTasks[word] = nil }   ← evicts on completion
+///       └── Task {
+///               try Oxford → success → WordPageUpdater
+///               catch → try MW (if key) → adapt → WordPageUpdater
+///               catch → print error, leave blank
+///           }
 final class DictionaryService {
     static let shared = DictionaryService()
 
     private var session: URLSessionProtocol
-    private var lookupTasks: [String: Task<Void, Never>] = [:]
+    private struct LookupTaskRecord {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
+    private var lookupTasks: [String: LookupTaskRecord] = [:]
+    private let lookupTasksLock = NSLock()
+
+    /// Serial queue for Oxford lookups — ensures only one scraping request at a time
+    /// to be polite to Oxford's servers. MW fallback is not serialized.
+    private let oxfordQueue = AsyncSerialQueue()
 
     // Dependency injection for tests
     init(session: URLSessionProtocol = URLSession.shared) {
@@ -47,73 +75,91 @@ final class DictionaryService {
     /// Start a background lookup for `word` (lemma), writing results to the file at `path`.
     func startLookup(word: String, at path: String) {
         let settings = AppSettings.shared
-        guard settings.lookupEnabled, !settings.mwApiKey.isEmpty else { return }
+        guard settings.lookupEnabled else { return }
 
         // Cancel any in-flight task for the same word before starting a new one
-        lookupTasks[word]?.cancel()
+        cancelLookupTask(for: word)
 
-        let apiKey = settings.mwApiKey
+        let mwApiKey = settings.mwApiKey
         let retries = settings.lookupRetries
         let session = self.session
+        let queue = self.oxfordQueue
+        let taskID = UUID()
 
         let task = Task<Void, Never> {
-            defer { lookupTasks[word] = nil }
+            defer { self.clearLookupTask(for: word, id: taskID) }
             do {
-                if let content = try await fetchWithRetries(
-                    word: word, apiKey: apiKey, retries: retries, session: session
-                ) {
+                // Try Oxford first (serialized)
+                let content: DictionaryContent? = try await queue.run {
+                    try await self.fetchFromOxford(
+                        word: word, retries: retries, session: session
+                    )
+                }
+
+                if let content = content {
                     try WordPageUpdater.update(at: path, with: content, lemma: word)
+                    return
                 }
             } catch is CancellationError {
-                // Task was cancelled — normal, no action needed
+                return
             } catch {
-                // All retries exhausted or permanent failure — blank definition remains
-                print("[DictionaryService] Lookup failed for '\(word)': \(error)")
+                print("[DictionaryService] Oxford failed for '\(word)': \(error)")
             }
+
+            // Oxford failed — try MW fallback if API key is configured
+            if !mwApiKey.isEmpty {
+                do {
+                    if let content = try await fetchFromMW(
+                        word: word, apiKey: mwApiKey, retries: retries, session: session
+                    ) {
+                        try WordPageUpdater.update(at: path, with: content, lemma: word)
+                        return
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    print("[DictionaryService] MW fallback also failed for '\(word)': \(error)")
+                }
+            }
+
+            // Both sources failed — blank template remains
         }
-        lookupTasks[word] = task
+        storeLookupTask(task, for: word, id: taskID)
     }
 
     /// Cancel all in-flight lookup tasks. Call from applicationWillTerminate.
     func cancelAll() {
-        lookupTasks.values.forEach { $0.cancel() }
+        let tasks = allLookupTasks()
+        tasks.forEach { $0.cancel() }
+
+        lookupTasksLock.lock()
         lookupTasks.removeAll()
+        lookupTasksLock.unlock()
     }
 
-    // MARK: - Fetch with retry
+    // MARK: - Oxford fetch
 
-    /// Fetch the definition with exponential backoff.
-    /// Returns nil when the word is not found (MW returns an array of strings, not objects).
-    /// Returns nil on permanent 4xx failure (401/403/429) without retrying.
-    /// Throws on cancellation.
-    private func fetchWithRetries(
-        word: String,
-        apiKey: String,
-        retries: Int,
-        session: URLSessionProtocol
+    private func fetchFromOxford(
+        word: String, retries: Int, session: URLSessionProtocol
     ) async throws -> DictionaryContent? {
-        // retries is the number of *additional* attempts: default 3 → 4 total attempts
-        // Delays (seconds): first attempt immediate; subsequent: 1, 2, 4, 8, 16, …
         let maxAttempts = retries + 1
-
         var lastError: Error?
+
         for attempt in 0..<maxAttempts {
             try Task.checkCancellation()
 
             if attempt > 0 {
-                let delaySecs = UInt64(pow(2.0, Double(attempt - 1)))  // 1, 2, 4, …
+                let delaySecs = UInt64(pow(2.0, Double(attempt)))  // 2, 4, 8, …
                 try await Task.sleep(nanoseconds: delaySecs * 1_000_000_000)
                 try Task.checkCancellation()
             }
 
             do {
-                let result = try await fetchOnce(word: word, apiKey: apiKey, session: session)
-                return result   // success or word-not-found (nil)
-            } catch DictionaryError.permanentFailure {
-                return nil      // 4xx — do not retry
+                return try await OxfordScraper.lookup(word: word, session: session)
+            } catch OxfordError.blocked {
+                return nil  // blocked — don't retry, fall through to MW
             } catch {
                 lastError = error
-                // network error or 5xx → will retry
             }
         }
 
@@ -121,11 +167,40 @@ final class DictionaryService {
         return nil
     }
 
-    /// Single HTTP attempt. Returns nil for word-not-found. Throws DictionaryError.permanentFailure for 4xx.
-    private func fetchOnce(
-        word: String,
-        apiKey: String,
-        session: URLSessionProtocol
+    // MARK: - MW fetch + retry (kept for fallback)
+
+    private func fetchFromMW(
+        word: String, apiKey: String, retries: Int, session: URLSessionProtocol
+    ) async throws -> DictionaryContent? {
+        let maxAttempts = retries + 1
+        var lastError: Error?
+
+        for attempt in 0..<maxAttempts {
+            try Task.checkCancellation()
+
+            if attempt > 0 {
+                let delaySecs = UInt64(pow(2.0, Double(attempt - 1)))
+                try await Task.sleep(nanoseconds: delaySecs * 1_000_000_000)
+                try Task.checkCancellation()
+            }
+
+            do {
+                let result = try await fetchMWOnce(word: word, apiKey: apiKey, session: session)
+                return result
+            } catch DictionaryError.permanentFailure {
+                return nil
+            } catch {
+                lastError = error
+            }
+        }
+
+        if let err = lastError { throw err }
+        return nil
+    }
+
+    /// Single MW HTTP attempt. Returns nil for word-not-found.
+    private func fetchMWOnce(
+        word: String, apiKey: String, session: URLSessionProtocol
     ) async throws -> DictionaryContent? {
         let encoded = word.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? word
         guard let url = URL(string: "https://www.dictionaryapi.com/api/v3/references/collegiate/json/\(encoded)?key=\(apiKey)") else {
@@ -144,16 +219,14 @@ final class DictionaryService {
             }
         }
 
-        return try parseMWResponse(data: data)
+        guard let raw = try parseMWResponse(data: data) else { return nil }
+        return adaptMWContent(raw, word: word)
     }
 
-    // MARK: - JSON parsing
+    // MARK: - MW JSON parsing (kept for fallback)
 
-    /// Parse MW API response.
-    /// MW returns an array: if items are Dicts → definitions found; if items are Strings → word not found.
-    /// Extracts: shortdef[0] as definition, fl as pos, hwi.prs[0].mw as pronunciation,
-    /// def.sseq.sense.dt.vis entries as examples (MW format codes stripped).
-    internal func parseMWResponse(data: Data) throws -> DictionaryContent? {
+    /// Parse MW API response into MWRawContent.
+    internal func parseMWResponse(data: Data) throws -> MWRawContent? {
         let json = try JSONSerialization.jsonObject(with: data)
         guard let array = json as? [Any], !array.isEmpty else { return nil }
 
@@ -163,14 +236,11 @@ final class DictionaryService {
         guard let entries = array as? [[String: Any]] else { return nil }
         guard let firstEntry = entries.first else { return nil }
 
-        // Definitions: all shortdefs from first entry
         guard let shortdefs = firstEntry["shortdef"] as? [String],
               !shortdefs.isEmpty, !shortdefs[0].isEmpty else { return nil }
 
-        // POS: fl field from first entry
         let pos = firstEntry["fl"] as? String
 
-        // Pronunciation and headword from hwi
         let pronunciation: String?
         let headword: String?
         if let hwi = firstEntry["hwi"] as? [String: Any] {
@@ -187,7 +257,7 @@ final class DictionaryService {
             headword = nil
         }
 
-        // Examples: collect vis entries from def.sseq.sense.dt across all entries, strip format codes
+        // Examples: collect vis entries
         var examples: [String] = []
         for entry in entries {
             guard let defArray = entry["def"] as? [[String: Any]] else { continue }
@@ -214,12 +284,43 @@ final class DictionaryService {
             }
         }
 
-        return DictionaryContent(
+        return MWRawContent(
             definitions: shortdefs,
             examples: examples,
             pos: pos,
             pronunciation: pronunciation,
-            headword: headword,
+            headword: headword
+        )
+    }
+
+    /// Adapt MW raw content into unified DictionaryContent model.
+    private func adaptMWContent(_ mw: MWRawContent, word: String) -> DictionaryContent {
+        var senses: [OxfordSense] = []
+        for (i, def) in mw.definitions.enumerated() {
+            let example = i < mw.examples.count ? [mw.examples[i]] : []
+            senses.append(OxfordSense(
+                cefrLevel: nil,
+                definition: def,
+                examples: example,
+                extraExamples: []
+            ))
+        }
+
+        let entry = OxfordEntry(
+            pos: mw.pos,
+            cefrLevel: nil,
+            senses: senses,
+            collocations: []
+        )
+
+        let syllableDisplay = mw.headword?.replacingOccurrences(of: "*", with: "·")
+
+        return DictionaryContent(
+            headword: syllableDisplay ?? word,
+            pronunciationBrE: mw.pronunciation.map { "/\($0)/" },
+            pronunciationAmE: nil,
+            entries: [entry],
+            nearbyWords: [],
             source: "Merriam-Webster"
         )
     }
@@ -232,11 +333,70 @@ final class DictionaryService {
         let range = NSRange(text.startIndex..., in: text)
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
     }
+
+    // MARK: - Lookup task bookkeeping
+
+    private func cancelLookupTask(for word: String) {
+        lookupTasksLock.lock()
+        let existingTask = lookupTasks[word]?.task
+        lookupTasksLock.unlock()
+        existingTask?.cancel()
+    }
+
+    private func storeLookupTask(_ task: Task<Void, Never>, for word: String, id: UUID) {
+        lookupTasksLock.lock()
+        lookupTasks[word] = LookupTaskRecord(id: id, task: task)
+        lookupTasksLock.unlock()
+    }
+
+    private func clearLookupTask(for word: String, id: UUID) {
+        lookupTasksLock.lock()
+        if lookupTasks[word]?.id == id {
+            lookupTasks[word] = nil
+        }
+        lookupTasksLock.unlock()
+    }
+
+    private func allLookupTasks() -> [Task<Void, Never>] {
+        lookupTasksLock.lock()
+        let tasks = lookupTasks.values.map(\.task)
+        lookupTasksLock.unlock()
+        return tasks
+    }
 }
 
 // MARK: - Errors
 
 private enum DictionaryError: Error {
-    case permanentFailure(statusCode: Int)   // 401/403/429 — do not retry
-    case serverError(statusCode: Int)        // 5xx — retry
+    case permanentFailure(statusCode: Int)   // MW: 401/403/429 — do not retry
+    case serverError(statusCode: Int)        // MW: 5xx — retry
+}
+
+// MARK: - AsyncSerialQueue
+
+/// Lightweight serial queue for async operations. Ensures only one operation runs at a time.
+actor AsyncSerialQueue {
+    private var isRunning = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Run an async operation, waiting for any previous operation to complete first.
+    func run<T>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        if isRunning {
+            await withCheckedContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+
+        isRunning = true
+        defer {
+            if waiters.isEmpty {
+                isRunning = false
+            } else {
+                let next = waiters.removeFirst()
+                next.resume()
+            }
+        }
+
+        return try await operation()
+    }
 }

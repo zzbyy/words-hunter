@@ -22,7 +22,7 @@ Eliminates the context-switching cost of manually creating vocabulary pages. The
 - Not an Obsidian plugin — it's a standalone system-level app
 - Not cross-platform — macOS only
 
-> **Note (v1.5+):** Words Hunter now auto-fills definitions from the Merriam-Webster API when an API key is configured. See Settings → Dictionary Lookup.
+> **Note (v1.5+/v1.8+):** Words Hunter auto-fills definitions from the Oxford Learner's Dictionary by default (no API key required). Merriam-Webster is available as an optional fallback. See Settings → Dictionary Lookup.
 > **Note (v1.7+):** An OpenClaw TypeScript plugin (`openclaw-plugin/`) adds AI-assisted vocabulary mastery sessions, SRS scheduling, and sighting tracking. See `SCHEMA.md` and `openclaw-plugin/SKILL.md`.
 
 ---
@@ -238,7 +238,8 @@ Words Hunter/
 │   │   │   ├── TextCapture.swift          # Pasteboard-based word capture
 │   │   │   ├── WordPageCreator.swift      # Markdown file creation
 │   │   │   ├── WordPageUpdater.swift      # Atomic definition injection
-│   │   │   ├── DictionaryService.swift    # MW API fetch + retry
+│   │   │   ├── OxfordScraper.swift        # Oxford Learner's Dictionary HTML scraping
+│   │   │   ├── DictionaryService.swift    # Oxford + MW fallback orchestrator
 │   │   │   └── VaultScanner.swift         # Vault file enumeration
 │   │   ├── UI/
 │   │   │   ├── StatusBarController.swift  # Menu bar icon and menu
@@ -395,12 +396,11 @@ The bubble should feel **cute and delightful** — a small reward for capturing 
 Features originally deferred from v1, now tracked in `TODOS.md`:
 
 **Shipped:**
-- **Auto-dictionary lookup** (v1.5) — MW API integration with exponential backoff, Keychain storage, rate-limit handling
+- **Auto-dictionary lookup** (v1.5/v1.8) — Oxford Learner's Dictionary scraping (primary, no API key) with MW API fallback, exponential backoff, rate-limit handling
 - **OpenClaw mastery plugin** (v1.7) — TypeScript plugin: 6 tools, Leitner SRS, sighting hook, SKILL.md agent flow
 
 **Still deferred (see TODOS.md for details):**
 - **AXUIElement sentence capture** — grab the sentence around the word at capture time (P3)
-- **Collins Dictionary support** — second definition source via scraping (P2, waiting for official API)
 - **Word count stats** — how many words captured this week/month in menu bar
 - **Configurable modifier key** — change from Option to Ctrl or other modifiers
 - **Launch at login** — auto-start when macOS boots
