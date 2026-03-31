@@ -8,12 +8,24 @@ enum PageCreationResult {
 
 struct WordPageCreator {
 
-    /// Default template with `{{word}}` and `{{date}}` placeholders.
+    /// Default template with creation-time and lookup-time placeholders.
+    ///
+    /// **Creation-time variables** (filled immediately when the page is created):
+    /// - `{{word}}` — lowercased lemma (e.g. "posit")
+    /// - `{{date}}` — capture date in YYYY-MM-DD format
+    ///
+    /// **Lookup-time variables** (filled after the MW dictionary lookup completes):
+    /// - `{{syllables}}` — syllable breakdown (e.g. "po·sit")
+    /// - `{{pronunciation}}` — IPA string (e.g. "/ˈpɒz.ɪt/")
+    /// - `{{meanings}}` — numbered meaning blocks generated from the API response
+    /// - `{{see-also}}` — `[[wikilink]]` lines for related words found in the vault
+    ///
+    /// Any variable can be omitted from a custom template to opt out of that section being auto-filled.
     /// Used when `.wordshunter/template.md` does not exist in the vault.
     static let defaultTemplate = """
     # {{word}}
 
-    **Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+    **Syllables:** {{syllables}} · **Pronunciation:** {{pronunciation}}
 
     ## Sightings
     - {{date}} — *(context sentence where you saw the word)*
@@ -21,18 +33,7 @@ struct WordPageCreator {
     ---
 
     ## Meanings
-
-    ### 1. () *()*
-
-    > *()*
-
-    **My sentence:**
-    - *(write your own sentence using this word)*
-
-    **Patterns:**
-    - *(common word combinations and grammar patterns)*
-
-    ---
+    {{meanings}}
 
     ## When to Use
 
@@ -48,7 +49,7 @@ struct WordPageCreator {
     ---
 
     ## See Also
-    *(link to other captured words with a note on how they differ)*
+    {{see-also}}
 
     ---
 
@@ -111,13 +112,29 @@ struct WordPageCreator {
         return defaultTemplate
     }
 
-    /// Writes the default template to `.wordshunter/template.md` if it doesn't exist yet.
+    /// Writes the default template to `.wordshunter/template.md`.
+    /// If the file already exists but predates the variable system (no `{{syllables}}`), it is
+    /// replaced with the new default so lookup-time fill works correctly.
     static func seedTemplateIfNeeded(vaultPath: String) {
         guard !vaultPath.isEmpty else { return }
         let dotDir = URL(fileURLWithPath: vaultPath).appendingPathComponent(".wordshunter")
         let templateURL = dotDir.appendingPathComponent("template.md")
-        guard !FileManager.default.fileExists(atPath: templateURL.path) else { return }
         try? FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: templateURL.path) {
+            // Migrate pre-variable templates: if NO lookup-time variable is present, overwrite with
+            // the new default. Checking only one variable would wrongly clobber custom templates
+            // that use some variables but not others (a valid opt-out pattern).
+            if let existing = try? String(contentsOf: templateURL, encoding: .utf8) {
+                let hasAnyLookupVar = existing.contains("{{syllables}}")
+                    || existing.contains("{{pronunciation}}")
+                    || existing.contains("{{meanings}}")
+                    || existing.contains("{{see-also}}")
+                if !hasAnyLookupVar {
+                    try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                }
+            }
+            return
+        }
         try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
     }
 }

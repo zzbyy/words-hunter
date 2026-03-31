@@ -29,6 +29,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             AppSettings.shared.useWordFolder = !discovered.words_folder.isEmpty
         }
 
+        // Migrate template.md if it predates the variable system
+        WordPageCreator.seedTemplateIfNeeded(vaultPath: AppSettings.shared.vaultPath)
+
         if AppSettings.shared.isSetupComplete {
             startMonitoringWhenTrusted()
         } else {
