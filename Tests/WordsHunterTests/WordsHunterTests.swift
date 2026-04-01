@@ -581,6 +581,7 @@ final class WordPageUpdaterTests: XCTestCase {
             entries: defaultEntries,
             nearbyWords: nearbyWords,
             corpusExamples: corpusExamples,
+            wordFamily: [],
             source: "Cambridge Dictionary"
         )
     }
@@ -721,6 +722,7 @@ final class WordPageUpdaterTests: XCTestCase {
             )],
             nearbyWords: [],
             corpusExamples: [],
+            wordFamily: [],
             source: "Merriam-Webster"
         )
         let url = writeFile(name: "posit.md", content: baseTemplate.replacingOccurrences(of: "delegate", with: "posit"))
