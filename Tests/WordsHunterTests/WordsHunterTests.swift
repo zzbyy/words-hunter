@@ -506,16 +506,16 @@ final class WordPageCreatorSeedTests: XCTestCase {
     }
 
     func testSeed_cambridgeTemplate_notOverwritten() throws {
-        // Simulate an already-current Cambridge template — must not be touched
+        // Simulate an already-current Cambridge template (has {{when-to-use}}) — must not be touched
         let dotDir = tempVault.appendingPathComponent(".wordshunter")
         try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
-        let customTemplate = "# {{word}}\n\n**Pronunciation:** {{pronunciation-bre}}\n\n{{corpus-examples}}\n\nMy custom section.\n"
+        let customTemplate = "# {{word}}\n\n**Pronunciation:** {{pronunciation-bre}}\n\n{{corpus-examples}}\n\n{{when-to-use}}\n\nMy custom section.\n"
         try customTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
 
         WordPageCreator.seedTemplateIfNeeded(vaultPath: tempVault.path)
 
         let after = try String(contentsOf: templateURL, encoding: .utf8)
-        XCTAssertEqual(after, customTemplate, "Oxford-era template must not be overwritten")
+        XCTAssertEqual(after, customTemplate, "Cambridge-era template must not be overwritten")
     }
 
     func testSeed_emptyVaultPath_noOp() {
