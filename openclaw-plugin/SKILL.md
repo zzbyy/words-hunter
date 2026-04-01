@@ -36,14 +36,18 @@ Call `load_word(word)`. Use the page content to:
 - Show prior mastery data (box, score, last practiced, failures)
 - Briefly introduce the word: definition, register, usage context
 
-### 3. Enrich missing sections (optional)
+### 3. Check for unfilled placeholders (fallback only)
 
-If Definition, Examples, or Meanings sections are empty or contain only placeholders:
+Word pages are auto-filled from Cambridge Dictionary when the word is captured.
+Most pages will already have definitions, pronunciations, and examples.
+
+If `## Meanings` still contains `{{meanings}}` or is clearly empty (Cambridge lookup
+failed or timed out):
 > "I'll fill in the blanks for '{word}' — one moment."
 
-Write what you know about the word into the page via `update_page`. Use your own
-knowledge of the word's meaning, register, and common collocations. Do NOT call any
-external API. Keep it brief: one clear definition, two example sentences.
+Write what you know about the word via `update_page`. Use your own knowledge of the
+word's meaning, register, and common collocations. Keep it brief: one clear definition,
+two example sentences. Do NOT call any external API.
 
 ### 4. Production practice
 

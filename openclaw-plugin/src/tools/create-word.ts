@@ -4,10 +4,16 @@ import { ToolResult, VaultConfig, ok, err } from '../types.js';
 import { wordsFolderPath, validateWord, assertInVault } from '../vault.js';
 import { masteryJsonPath, readMasteryStore, writeMasteryStore } from '../vault.js';
 import { todayString } from '../srs/scheduler.js';
+import { cambridgeLookup, CambridgeBlockedError } from '../cambridge-lookup.js';
+import { fillWordPage } from '../fill-word-page.js';
 
 // Template variable reference:
 //   Creation-time (filled on page creation):  {{word}}, {{date}}
-//   Lookup-time   (filled after MW lookup):    {{syllables}}, {{pronunciation}}, {{meanings}}, {{see-also}}
+//   Lookup-time   (filled after Cambridge):   {{syllables}}, {{pronunciation}}, {{meanings}},
+//                                              {{when-to-use}}, {{word-family}}, {{see-also}}
+//
+// Lookup runs immediately after page creation (best-effort, 8s timeout).
+// If lookup fails, template vars remain as placeholders for the agent to fill.
 // Any variable can be omitted from a custom template to opt out of that section.
 const DEFAULT_TEMPLATE = `# {{word}}
 
@@ -22,16 +28,11 @@ const DEFAULT_TEMPLATE = `# {{word}}
 {{meanings}}
 
 ## When to Use
-
-**Where it fits:**
-**In casual speech:**
-
+{{when-to-use}}
 ---
 
 ## Word Family
-
-*(list related forms, each with a short example)*
-
+{{word-family}}
 ---
 
 ## See Also
@@ -54,17 +55,21 @@ async function loadTemplate(config: VaultConfig, word: string, date: string): Pr
     .replaceAll('{{date}}', date);
 }
 
+export type LookupStatus = 'ok' | 'not_found' | 'blocked' | 'failed';
+
 /**
- * create_word — create a new word page and add it to mastery.json.
+ * create_word — create a new word page, register it for study, and auto-fill
+ * dictionary data from Cambridge Dictionary.
  *
- * Writes a blank word page template to the words folder and registers
- * the word in mastery.json (box=1, status=new). Returns FILE_EXISTS if
- * the page already exists.
+ * The page is created and returned immediately. Cambridge lookup runs in the
+ * same call (best-effort, 8s timeout). On lookup failure the page is still
+ * created with template placeholders — the agent can fill them later via
+ * the Enrich step in SKILL.md.
  */
 export async function createWord(
   config: VaultConfig,
   params: { word: string },
-): Promise<ToolResult<{ word: string; path: string }>> {
+): Promise<ToolResult<{ word: string; path: string; lookup: LookupStatus }>> {
   const validationError = validateWord(params.word);
   if (validationError) return err(validationError);
 
@@ -118,5 +123,20 @@ export async function createWord(
     }
   }
 
-  return ok({ word, path: filePath });
+  // Cambridge lookup — best-effort, fills template vars in-place
+  const lookup = await runLookup(config, word);
+
+  return ok({ word, path: filePath, lookup });
+}
+
+async function runLookup(config: VaultConfig, word: string): Promise<LookupStatus> {
+  try {
+    const content = await cambridgeLookup(word);
+    if (!content) return 'not_found';
+    await fillWordPage(config, word, content);
+    return 'ok';
+  } catch (e) {
+    if (e instanceof CambridgeBlockedError) return 'blocked';
+    return 'failed';
+  }
 }
