@@ -48,9 +48,28 @@ Format: [version] - YYYY-MM-DD
 
 - **Template variable convention** — `template.md` now supports four lookup-time variables in addition to the existing `{{word}}` and `{{date}}`: `{{syllables}}`, `{{pronunciation}}`, `{{meanings}}`, and `{{see-also}}`. Any variable can be omitted to opt out of that section being auto-filled. Existing templates without these variables are migrated to the new default on next launch.
 
+## [1.9.0.0] - 2026-04-01
+
+### Added
+
+- **Cambridge Dictionary auto-lookup in OpenClaw** — when a word page is created via `/hunt` or the OpenClaw message hook, Cambridge Dictionary is scraped automatically and template variables are filled in-place. Definitions, pronunciations (BrE/AmE IPA), CEFR levels, patterns, corpus examples, word family, and register labels are all populated without any API key.
+- **`cambridge-lookup.ts`** — TypeScript port of the Cambridge scraper (cheerio-based HTML parser). No external dependencies beyond cheerio. 8s fetch timeout with AbortController, realistic browser headers, 0.5–2s jitter delay.
+- **`fill-word-page.ts`** — fills 6 lookup-time template variables atomically. `{{see-also}}` cross-links to other vault words found in the corpus (word-boundary regex scan).
+- **`/hunt` slash command** now logs Cambridge lookup status (`ok`, `not_found`, `blocked`, `failed`) to the agent log.
+- SKILL.md step 3 updated: agent enrichment is now a fallback for when Cambridge lookup failed, not the primary fill mechanism.
+
+### Changed
+
+- **`create_word` return type** now includes `lookup` field: `'ok' | 'not_found' | 'blocked' | 'failed'`. Fully backward-compatible for existing callers.
+- **Default word page template** — `{{when-to-use}}` and `{{word-family}}` placeholders added; the `## When to Use` and `## Word Family` sections now auto-fill from Cambridge data instead of remaining blank.
+
+---
+
 ## [Unreleased]
 
 ### Added
+
+- **`create_word` tool**
 
 - **`create_word` tool** — agent can add a word page directly from chat; also powers the new `/hunt <word>` slash command
 - **`/hunt <word>` slash command** — send `/hunt ephemeral` in any connected channel to instantly capture a word without the macOS app
