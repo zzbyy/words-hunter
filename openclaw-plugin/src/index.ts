@@ -239,7 +239,10 @@ export default definePluginEntry({
         const word = huntMatch[1].trim().toLowerCase();
         const result = await createWord(configResult.data, { word });
         if (result.ok) {
-          api.logger.info(`[words-hunter] /hunt: created page for '${word}'`);
+          const lookupNote = result.data.lookup === 'ok'
+            ? 'Cambridge lookup: ok'
+            : `Cambridge lookup: ${result.data.lookup}`;
+          api.logger.info(`[words-hunter] /hunt: created page for '${word}' (${lookupNote})`);
         } else {
           api.logger.info(`[words-hunter] /hunt '${word}': ${result.error.message}`);
         }

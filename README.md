@@ -151,6 +151,8 @@ That's it. The plugin discovers your vault via `.wordshunter/config.json`, which
 
 **Start a mastery session:** open any connected chat channel and send `/vocab`.
 
+**Capture a word from chat:** send `/hunt ephemeral` in any connected channel. The word page is created and auto-filled with Cambridge Dictionary data (definitions, pronunciations, CEFR levels, examples, word family) — no macOS app needed.
+
 ---
 
 ## Usage
