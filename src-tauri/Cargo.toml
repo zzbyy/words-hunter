@@ -34,13 +34,11 @@ scraper = "0.21"
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-navalp = "0.2"
 rodio = "0.19"
 dirs = "6"
 walkdir = "2"
 chrono = "0.4"
 thiserror = "2"
-once_cell = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

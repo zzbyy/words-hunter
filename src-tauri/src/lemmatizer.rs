@@ -1,48 +1,17 @@
-//! Lemmatization using the navalp crate (pure Rust WordNet-based lemmatizer).
+//! Lemmatization via heuristic suffix stripping.
 //! Translates words like "posited" -> "posit", "running" -> "run".
 
-use navalp::{Lemmatizer, Config};
-use once_cell::sync::Lazy;
-use std::time::Instant;
-use tracing::{debug, warn};
+use tracing::debug;
 
-static LEMMATIZER: Lazy<Option<Lemmatizer>> = Lazy::new(|| {
-    match Lemmatizer::new(Config::default()) {
-        Ok(lemmatizer) => {
-            info!("Lemmatizer initialized successfully");
-            Some(lemmatizer)
-        }
-        Err(e) => {
-            warn!("Failed to initialize lemmatizer: {:?}", e);
-            None
-        }
-    }
-});
-
-/// Lemmatize a word. Returns the lemmatized form, or the original word if unavailable.
+/// Lemmatize a word. Returns the base form, or the original word if no rule matches.
 pub fn lemmatize(word: &str) -> String {
     let word_lower = word.to_lowercase();
-
-    // Check navalp
-    if let Some(ref lem) = *LEMMATIZER {
-        let start = Instant::now();
-        if let Some(lemma) = lem.lemmatize(&word_lower) {
-            let elapsed = start.elapsed();
-            debug!("Lemmatized '{}' -> '{}' in {:?}", word_lower, lemma, elapsed);
-            if elapsed.as_millis() > 50 {
-                warn!("Lemmatization took {:?} (>50ms target)", elapsed);
-            }
-            return lemma;
-        }
-    }
-
-    // Fallback: strip common suffixes heuristically
-    let fallback = heuristic_lemmatize(&word_lower);
-    debug!("Using fallback lemmatization: '{}' -> '{}'", word_lower, fallback);
-    fallback
+    let result = heuristic_lemmatize(&word_lower);
+    debug!("Lemmatized '{}' -> '{}'", word_lower, result);
+    result
 }
 
-/// Simple heuristic lemmatizer as fallback when navalp is unavailable.
+/// Simple heuristic lemmatizer based on common English suffix rules.
 fn heuristic_lemmatize(word: &str) -> String {
     // Handle common irregular forms
     match word {
@@ -92,6 +61,6 @@ mod tests {
     fn test_lemmatize() {
         assert_eq!(lemmatize("running"), "run");
         assert_eq!(lemmatize("posited"), "posit");
-        assert_eq!(lemmatize("better"), "better"); // navalp may handle this
+        assert_eq!(lemmatize("better"), "better");
     }
 }
