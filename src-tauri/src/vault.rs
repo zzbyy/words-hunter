@@ -5,10 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::collections::HashMap;
-use tracing::{info, debug, warn, error};
+use tracing::{info, debug, warn};
 use thiserror::Error;
-
-use crate::config::AppConfig;
 
 #[derive(Error, Debug)]
 pub enum VaultError {

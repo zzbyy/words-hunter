@@ -97,13 +97,15 @@ pub fn read_clipboard_word() -> Result<String, CaptureError> {
             let handle = GetClipboardData(13u32)
                 .map_err(|_| CaptureError::ClipboardEmpty)?;
 
-            let ptr = GlobalLock(handle);
+            // GetClipboardData returns HANDLE; GlobalLock/Unlock need HGLOBAL
+            let hglobal = HGLOBAL(handle.0);
+            let ptr = GlobalLock(hglobal);
             if ptr.is_null() {
                 return Err(CaptureError::ClipboardEmpty);
             }
 
             let text = wc_to_string(ptr as *const u16);
-            let _ = GlobalUnlock(handle);
+            let _ = GlobalUnlock(hglobal);
 
             let word = text.trim().to_string();
             if !is_valid_word(&word) {

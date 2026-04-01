@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 use rodio::{Decoder, OutputStream, source::Source};
-use tracing::{debug, warn, error};
+use tracing::{debug, warn};
 
 /// Built-in pop sound as raw bytes (short sine wave burst)
 /// This is a ~100ms "pop" sound at 800Hz, generated programmatically

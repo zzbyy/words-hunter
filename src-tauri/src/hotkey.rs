@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::cell::RefCell;
 use tauri::{AppHandle, Emitter};
-use tracing::{info, error, debug, warn};
+use tracing::{info, error, debug};
 
 #[cfg(windows)]
 use windows::{
@@ -103,6 +103,6 @@ unsafe extern "system" fn hook_callback(code: i32, wparam: WPARAM, lparam: LPARA
 
 #[cfg(not(windows))]
 pub fn start_hotkey_listener(_app: AppHandle) -> Result<(), String> {
-    warn!("Hotkey listener only implemented on Windows");
+    tracing::warn!("Hotkey listener only implemented on Windows");
     Ok(())
 }
