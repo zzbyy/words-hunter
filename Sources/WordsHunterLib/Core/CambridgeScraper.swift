@@ -75,6 +75,7 @@ enum CambridgeScraper {
         let (breIPA, ameIPA) = extractPronunciations(doc: doc)
         let entries = extractEntries(doc: doc)
         let corpusExamples = extractCorpusExamples(doc: doc)
+        let wordFamily = extractWordFamily(doc: doc)
 
         guard !entries.isEmpty else { return nil }
 
@@ -85,6 +86,7 @@ enum CambridgeScraper {
             entries: entries,
             nearbyWords: [],
             corpusExamples: corpusExamples,
+            wordFamily: wordFamily,
             source: "Cambridge Dictionary"
         )
     }
@@ -301,6 +303,16 @@ enum CambridgeScraper {
             }
         }
 
+        // Register / domain label: span.reg.dreg (formal/informal) or span.lab.dlab (domain)
+        let register: String?
+        if let regEl = (try? block.select("span.reg.dreg, span.lab.dlab").first()),
+           let regText = try? regEl.text() {
+            let cleaned = clean(regText)
+            register = cleaned.isEmpty ? nil : cleaned
+        } else {
+            register = nil
+        }
+
         return OxfordSense(
             cefrLevel: cefr,
             definition: definition,
@@ -308,7 +320,8 @@ enum CambridgeScraper {
             extraExamples: [],
             senseLabel: senseLabel,
             grammar: grammar,
-            patterns: patterns
+            patterns: patterns,
+            register: register
         )
     }
 
@@ -332,6 +345,28 @@ enum CambridgeScraper {
             }
         }
         return results
+    }
+
+    // MARK: - Word Family
+
+    /// Extract the word family box from a Cambridge Dictionary page.
+    /// Cambridge renders this as `div.lbb.lb-wf` containing `div.lcs` entries,
+    /// each with a headword (`.hw.dhw`) and one or more POS tags (`span.pos.dpos`).
+    internal static func extractWordFamily(doc: Document) -> [WordFamilyEntry] {
+        guard let wfBlock = (try? doc.select("div.lbb.lb-wf"))?.first() else { return [] }
+        guard let groups = try? wfBlock.select("div.lcs") else { return [] }
+
+        var entries: [WordFamilyEntry] = []
+        for group in groups {
+            let word = clean((try? group.select(".hw.dhw").first()?.text()) ?? "")
+            guard !word.isEmpty else { continue }
+            let poses = ((try? group.select("span.pos.dpos").array()) ?? [])
+                .compactMap { try? $0.text() }
+                .map { clean($0) }
+                .filter { !$0.isEmpty }
+            entries.append(WordFamilyEntry(word: word, partsOfSpeech: poses))
+        }
+        return entries
     }
 
     // MARK: - Text Helpers

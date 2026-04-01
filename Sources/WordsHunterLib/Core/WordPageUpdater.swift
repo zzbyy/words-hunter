@@ -8,8 +8,11 @@ import Foundation
 /// - `{{pronunciation-ame}}` — American English IPA (e.g. "/ˈdelɪɡət/")
 /// - `{{cefr}}` — CEFR level badge (e.g. "B2")
 /// - `{{meanings}}` — numbered meaning blocks with CEFR per sense and extra examples
-/// - `{{collocations}}` — collocation groups (adjective, verb +, etc.)
-/// - `{{nearby-words}}` — nearby dictionary words with POS
+/// - `{{corpus-examples}}` — real-world usage from the Cambridge English Corpus
+/// - `{{when-to-use}}` — register/domain labels per sense (formal, informal, specialized…)
+/// - `{{word-family}}` — related word forms from the Cambridge word family box
+/// - `{{collocations}}` — collocation groups (adjective, verb +, etc.) [legacy]
+/// - `{{nearby-words}}` — nearby dictionary words with POS [legacy]
 /// - `{{see-also}}` — `[[wikilink]]` lines for related words found in the vault
 ///
 /// Safety checks:
@@ -83,6 +86,16 @@ enum WordPageUpdater {
         if updated.contains("{{nearby-words}}") {
             let nearbyBlock = buildNearbyWordsBlock(content: content)
             updated = updated.replacingOccurrences(of: "{{nearby-words}}", with: nearbyBlock)
+        }
+
+        // Fill {{when-to-use}}
+        if updated.contains("{{when-to-use}}") {
+            updated = updated.replacingOccurrences(of: "{{when-to-use}}", with: buildWhenToUseBlock(content: content))
+        }
+
+        // Fill {{word-family}}
+        if updated.contains("{{word-family}}") {
+            updated = updated.replacingOccurrences(of: "{{word-family}}", with: buildWordFamilyBlock(content: content))
         }
 
         // Fill {{see-also}} with vault links
@@ -246,6 +259,43 @@ enum WordPageUpdater {
             }
         }
         return "—"
+    }
+
+    // MARK: - When to Use block builder
+
+    /// Builds the "When to Use" content from register/domain labels scraped per sense.
+    /// If no labels are found, falls back to manual prompts so the section remains useful.
+    private static func buildWhenToUseBlock(content: DictionaryContent) -> String {
+        // Collect unique, non-empty register labels across all senses
+        var seen = Set<String>()
+        var labels: [String] = []
+        for entry in content.entries {
+            for sense in entry.senses {
+                if let reg = sense.register, !reg.isEmpty, seen.insert(reg.lowercased()).inserted {
+                    labels.append(reg)
+                }
+            }
+        }
+
+        if !labels.isEmpty {
+            return "**Register:** \(labels.joined(separator: ", "))\n"
+        }
+        // Fallback: preserve the manual prompts from the original template
+        return "**Where it fits:**\n**In casual speech:**\n"
+    }
+
+    // MARK: - Word Family block builder
+
+    /// Builds the "Word Family" list from Cambridge's word family box.
+    /// Falls back to a manual note if no data was scraped.
+    private static func buildWordFamilyBlock(content: DictionaryContent) -> String {
+        guard !content.wordFamily.isEmpty else {
+            return "*(no word family data found — add related forms manually)*\n"
+        }
+        return content.wordFamily.map { entry in
+            let posLabel = entry.partsOfSpeech.isEmpty ? "" : " — \(entry.partsOfSpeech.joined(separator: ", "))"
+            return "- **\(entry.word)**\(posLabel)"
+        }.joined(separator: "\n") + "\n"
     }
 
     // MARK: - Generic section helpers

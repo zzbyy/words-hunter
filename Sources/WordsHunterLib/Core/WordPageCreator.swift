@@ -43,15 +43,11 @@ struct WordPageCreator {
     ---
 
     ## When to Use
-
-    **Where it fits:**
-    **In casual speech:**
-
+    {{when-to-use}}
     ---
 
     ## Word Family
-
-    *(list related forms, each with a short example)*
+    {{word-family}}
 
     ---
 
@@ -122,7 +118,8 @@ struct WordPageCreator {
     /// All lookup-time variable names used in the current template system.
     static let allLookupVariables = [
         "{{pronunciation-bre}}", "{{pronunciation-ame}}", "{{cefr}}",
-        "{{meanings}}", "{{corpus-examples}}", "{{see-also}}",
+        "{{meanings}}", "{{corpus-examples}}",
+        "{{when-to-use}}", "{{word-family}}", "{{see-also}}",
         // Legacy Oxford/MW variables — kept so old pages are still detected as fillable
         "{{collocations}}", "{{nearby-words}}"
     ]
@@ -162,6 +159,11 @@ struct WordPageCreator {
                 let hasLegacyOxfordVar = legacyOxfordVariables.contains { existing.contains($0) }
                 let hasCambridgeVar = existing.contains("{{corpus-examples}}")
                 if hasLegacyOxfordVar && !hasCambridgeVar {
+                    try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                    return
+                }
+                // Cambridge-era template missing new variables → upgrade
+                if hasCambridgeVar && !existing.contains("{{when-to-use}}") {
                     try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
                     return
                 }

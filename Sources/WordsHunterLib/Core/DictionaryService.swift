@@ -11,6 +11,7 @@ struct DictionaryContent {
     let entries: [OxfordEntry]      // one per POS (noun, verb, etc.)
     let nearbyWords: [NearbyWord]
     let corpusExamples: [String]    // Cambridge English Corpus examples
+    let wordFamily: [WordFamilyEntry]   // Cambridge word family box (empty for MW)
     let source: String              // "Cambridge Dictionary" or "Merriam-Webster"
 }
 
@@ -323,6 +324,7 @@ final class DictionaryService {
             entries: [entry],
             nearbyWords: [],
             corpusExamples: [],
+            wordFamily: [],
             source: "Merriam-Webster"
         )
     }
