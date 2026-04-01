@@ -51,10 +51,15 @@ final class AppSettings {
 
     // MARK: - Dictionary lookup
 
-    /// Whether auto-lookup is enabled. Off by default.
-    /// The toggle lets users disable lookup without losing their API key — intentional redundancy.
+    /// Whether auto-lookup is enabled. On by default (Oxford scraping needs no API key).
+    /// The toggle lets users disable lookup entirely if desired.
     var lookupEnabled: Bool {
-        get { defaults.bool(forKey: Key.lookupEnabled) }
+        get {
+            // New installs: key absent → defaults.bool returns false → we want true
+            // So check if the key has been explicitly set
+            if defaults.object(forKey: Key.lookupEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.lookupEnabled)
+        }
         set { defaults.set(newValue, forKey: Key.lookupEnabled) }
     }
 
@@ -69,6 +74,7 @@ final class AppSettings {
     }
 
     /// Merriam-Webster API key, stored in UserDefaults.
+    /// Optional — used only as a fallback when Oxford scraping fails.
     var mwApiKey: String {
         get { defaults.string(forKey: Key.mwApiKey) ?? "" }
         set { defaults.set(newValue, forKey: Key.mwApiKey) }

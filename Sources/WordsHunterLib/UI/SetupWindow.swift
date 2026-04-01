@@ -62,11 +62,12 @@ final class SetupViewController: NSViewController {
         return f
     }()
 
-    private let lookupEnabledToggle = NSButton(checkboxWithTitle: "Enable auto-lookup", target: nil, action: nil)
+    private let lookupEnabledToggle = NSButton(checkboxWithTitle: "Enable Auto-Lookup", target: nil, action: nil)
 
+    // MW fallback controls
     private let mwApiKeyField: NSTextField = {
         let f = NSTextField()
-        f.placeholderString = "Paste your Merriam-Webster key here"
+        f.placeholderString = "Paste your Merriam-Webster key here (optional)"
         f.bezelStyle = .roundedBezel
         return f
     }()
@@ -114,6 +115,25 @@ final class SetupViewController: NSViewController {
         return b
     }()
 
+    // The MW subsection and research note — shown when Auto-Lookup is on, hidden when off
+    private let mwSection: NSStackView = {
+        let s = NSStackView()
+        s.orientation = .vertical
+        s.alignment = .leading
+        s.spacing = 6
+        s.isHidden = true
+        return s
+    }()
+
+    private let researchNote: NSTextField = {
+        let f = NSTextField(wrappingLabelWithString:
+            "💡 The real learning happens when you write your own definition — use the lookup as a starting scaffold.")
+        f.textColor = .secondaryLabelColor
+        f.font = NSFont.systemFont(ofSize: 11)
+        f.isHidden = true
+        return f
+    }()
+
     // MARK: - View lifecycle
 
     override func loadView() {
@@ -128,16 +148,17 @@ final class SetupViewController: NSViewController {
         lookupEnabledToggle.action = #selector(lookupToggleChanged)
         retriesStepper.target = self
         retriesStepper.action = #selector(retriesStepperChanged)
+        mwApiKeyField.delegate = self
 
         buildUI()
         loadCurrentSettings()
         updateWordFolderState()
         updateLookupState()
+        updateRetriesState()
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        // Size window to exactly fit its content
         if let window = view.window {
             let size = view.fittingSize
             window.setContentSize(size)
@@ -148,76 +169,93 @@ final class SetupViewController: NSViewController {
     // MARK: - Build UI
 
     private func buildUI() {
-        let margin: CGFloat = 20
-        let boxWidth: CGFloat = 440   // fixed reference width — box fills this
+        let margin: CGFloat = 24
+        let contentWidth: CGFloat = 420
 
-        // ── Intro label ──
+        // ── Intro ──
         let introLabel = NSTextField(wrappingLabelWithString:
             "Words Hunter captures vocabulary words from any app while you read or code.")
         introLabel.font = NSFont.boldSystemFont(ofSize: 13)
-        introLabel.preferredMaxLayoutWidth = boxWidth
+        introLabel.preferredMaxLayoutWidth = contentWidth
 
-        // ── Vault box ──
+        // ── Words Directory section ──
+        let dirHeader = sectionHeader("Words Directory", width: contentWidth)
+
         let browseBtn = NSButton(title: "Browse…", target: self, action: #selector(browse))
         browseBtn.bezelStyle = .rounded
         browseBtn.setContentHuggingPriority(.required, for: .horizontal)
         browseBtn.setContentCompressionResistancePriority(.required, for: .horizontal)
-
         vaultPathField.setAccessibilityLabel("Words directory path")
 
-        let vaultBox = makeBox(title: "Words Directory",
-                               rows: [hstack([vaultPathField, browseBtn])],
-                               width: boxWidth)
+        let pathRow = hstack([vaultPathField, browseBtn])
+        NSLayoutConstraint.activate([pathRow.widthAnchor.constraint(equalToConstant: contentWidth)])
 
-        // ── Word Location box ──
-        // Indent the folder field 20pt with a leading spacer
-        let folderRow = hstack([spacer(20), wordFolderField])
-        let locationBox = makeBox(title: "Word Location",
-                                  rows: [useWordFolderToggle, folderRow],
-                                  width: boxWidth)
+        let folderRow = hstack([spacer(16), wordFolderField])
+        NSLayoutConstraint.activate([folderRow.widthAnchor.constraint(equalToConstant: contentWidth)])
 
-        // ── Dictionary Lookup box ──
-        let docText = NSTextField(wrappingLabelWithString:
-            """
-            📖 Dictionary Lookup
-            When enabled, Words Hunter quietly fetches a definition from Merriam-Webster \
-            after capturing a word — you'll find it waiting in the word's page.
+        // ── Dictionary Lookup section ──
+        let lookupHeader = sectionHeader("Dictionary Lookup", width: contentWidth)
 
-            💡 Research shows that writing your own definition strengthens memory far more \
-            than reading one. Use this as a starting scaffold — the learning happens when \
-            you edit it, not when it appears.
-            """)
-        docText.textColor = .secondaryLabelColor
-        docText.font = NSFont.systemFont(ofSize: 11)
-        docText.preferredMaxLayoutWidth = boxWidth - 24  // inset for box margins
+        let lookupNote = NSTextField(wrappingLabelWithString:
+            "When enabled, Words Hunter automatically looks up the captured word and fills in the glosses, example sentences, and collocations — ready for you when you open the page.")
+        lookupNote.textColor = .secondaryLabelColor
+        lookupNote.font = NSFont.systemFont(ofSize: 11)
+        lookupNote.preferredMaxLayoutWidth = contentWidth
 
-        let apiKeyLabel = label("MW API Key:")
+        // MW fallback subsection — always visible when Auto-Lookup is on
+        let mwHeader = NSTextField(labelWithString: "Merriam-Webster API Key")
+        mwHeader.font = NSFont.boldSystemFont(ofSize: 11)
+        mwHeader.textColor = .secondaryLabelColor
+
+        let mwNote = NSTextField(wrappingLabelWithString:
+            "Adding a key gives Auto-Lookup a reliable fallback, making the experience more robust and fluent.")
+        mwNote.textColor = .tertiaryLabelColor
+        mwNote.font = NSFont.systemFont(ofSize: 11)
+        mwNote.preferredMaxLayoutWidth = contentWidth
+
         mwApiKeyField.setAccessibilityLabel("Merriam-Webster API key")
+        NSLayoutConstraint.activate([mwApiKeyField.widthAnchor.constraint(equalToConstant: contentWidth)])
 
         retriesValueLabel.setContentHuggingPriority(.required, for: .horizontal)
         retriesStepper.setAccessibilityLabel("Lookup retries")
+        let retryRow = hstack([label("Max retries:"), retriesStepper, retriesValueLabel])
 
-        let lookupBox = makeBox(title: "Dictionary Lookup", rows: [
-            docText,
-            lookupEnabledToggle,
-            hstack([apiKeyLabel, mwApiKeyField]),
-            hstack([label("Max retries:"), retriesStepper, retriesValueLabel]),
-            linkButton
-        ], width: boxWidth)
+        for v: NSView in [mwHeader, mwNote, mwApiKeyField, linkButton, retryRow] {
+            mwSection.addArrangedSubview(v)
+        }
+        mwSection.setCustomSpacing(3, after: mwHeader)
+        mwSection.setCustomSpacing(8, after: mwNote)
+        mwSection.setCustomSpacing(4, after: mwApiKeyField)
+
+        researchNote.preferredMaxLayoutWidth = contentWidth
 
         // ── Outer stack ──
-        // Items pinned to the stack's width via matchWidth constraints added in makeBox.
         let outerStack = NSStackView()
         outerStack.orientation = .vertical
         outerStack.alignment = .leading
-        outerStack.spacing = 12
-        outerStack.edgeInsets = NSEdgeInsets(top: margin, left: margin,
-                                             bottom: margin, right: margin)
+        outerStack.spacing = 8
+        outerStack.edgeInsets = NSEdgeInsets(top: margin, left: margin, bottom: margin, right: margin)
         outerStack.translatesAutoresizingMaskIntoConstraints = false
 
-        for v in [introLabel, vaultBox, locationBox, lookupBox, editTemplateBtn, statusLabel, startBtn] {
+        let divider = makeSeparator(width: contentWidth)
+
+        for v in [introLabel,
+                  dirHeader, pathRow, useWordFolderToggle, folderRow,
+                  lookupHeader, lookupNote, lookupEnabledToggle, mwSection, researchNote,
+                  divider,
+                  editTemplateBtn, statusLabel, startBtn] {
             outerStack.addArrangedSubview(v)
         }
+
+        outerStack.setCustomSpacing(20, after: introLabel)
+        outerStack.setCustomSpacing(8,  after: dirHeader)
+        outerStack.setCustomSpacing(20, after: folderRow)
+        outerStack.setCustomSpacing(8,  after: lookupHeader)
+        outerStack.setCustomSpacing(10, after: lookupEnabledToggle)
+        outerStack.setCustomSpacing(12, after: mwSection)
+        outerStack.setCustomSpacing(20, after: researchNote)
+        outerStack.setCustomSpacing(16, after: divider)
+        outerStack.setCustomSpacing(6,  after: editTemplateBtn)
 
         view.addSubview(outerStack)
         NSLayoutConstraint.activate([
@@ -250,7 +288,22 @@ final class SetupViewController: NSViewController {
 
     private func updateLookupState() {
         let on = lookupEnabledToggle.state == .on
-        linkButton.isEnabled = on
+        mwSection.isHidden = !on
+        researchNote.isHidden = !on
+        updateRetriesState()
+        if let window = view.window {
+            let size = view.fittingSize
+            window.setContentSize(size)
+            window.minSize = NSSize(width: size.width, height: size.height)
+        }
+    }
+
+    private func updateRetriesState() {
+        let lookupOn = lookupEnabledToggle.state == .on
+        let hasKey = !mwApiKeyField.stringValue.trimmingCharacters(in: apiKeyTrimSet).isEmpty
+        let enabled = lookupOn && hasKey
+        retriesStepper.isEnabled = enabled
+        retriesValueLabel.textColor = enabled ? .labelColor : .tertiaryLabelColor
     }
 
     // MARK: - Actions
@@ -322,35 +375,29 @@ final class SetupViewController: NSViewController {
 
     // MARK: - Layout helpers
 
-    /// NSBox with a vertical stack of `rows` as its content, pinned to `width`.
-    private func makeBox(title: String, rows: [NSView], width: CGFloat) -> NSBox {
-        let box = NSBox()
-        box.boxType = .primary
-        box.titlePosition = .noTitle
-        box.contentViewMargins = NSSize(width: 12, height: 10)
+    /// Section title with an inline separator line extending to `width`.
+    private func sectionHeader(_ title: String, width: CGFloat) -> NSView {
+        let lbl = NSTextField(labelWithString: title)
+        lbl.font = NSFont.boldSystemFont(ofSize: 13)
+        lbl.setContentHuggingPriority(.required, for: .horizontal)
 
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = NSFont.boldSystemFont(ofSize: 11)
+        let sep = NSBox()
+        sep.boxType = .separator
 
-        let innerStack = NSStackView(views: [titleLabel] + rows)
-        innerStack.orientation = .vertical
-        innerStack.alignment = .leading
-        innerStack.spacing = 8
-        innerStack.translatesAutoresizingMaskIntoConstraints = false
+        let stack = NSStackView(views: [lbl, sep])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
+        NSLayoutConstraint.activate([stack.widthAnchor.constraint(equalToConstant: width)])
+        return stack
+    }
 
-        guard let cv = box.contentView else { return box }
-        cv.addSubview(innerStack)
-        NSLayoutConstraint.activate([
-            innerStack.topAnchor.constraint(equalTo: cv.topAnchor),
-            innerStack.leadingAnchor.constraint(equalTo: cv.leadingAnchor),
-            innerStack.trailingAnchor.constraint(equalTo: cv.trailingAnchor),
-            innerStack.bottomAnchor.constraint(equalTo: cv.bottomAnchor)
-        ])
-
-        NSLayoutConstraint.activate([
-            box.widthAnchor.constraint(equalToConstant: width)
-        ])
-        return box
+    /// Full-width horizontal separator line.
+    private func makeSeparator(width: CGFloat) -> NSBox {
+        let sep = NSBox()
+        sep.boxType = .separator
+        NSLayoutConstraint.activate([sep.widthAnchor.constraint(equalToConstant: width)])
+        return sep
     }
 
     private func hstack(_ views: [NSView]) -> NSStackView {
@@ -375,3 +422,11 @@ final class SetupViewController: NSViewController {
     }
 }
 
+// MARK: - NSTextFieldDelegate
+
+extension SetupViewController: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard (obj.object as? NSTextField) === mwApiKeyField else { return }
+        updateRetriesState()
+    }
+}

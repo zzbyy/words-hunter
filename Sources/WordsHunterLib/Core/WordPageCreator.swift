@@ -14,10 +14,12 @@ struct WordPageCreator {
     /// - `{{word}}` — lowercased lemma (e.g. "posit")
     /// - `{{date}}` — capture date in YYYY-MM-DD format
     ///
-    /// **Lookup-time variables** (filled after the MW dictionary lookup completes):
-    /// - `{{syllables}}` — syllable breakdown (e.g. "po·sit")
-    /// - `{{pronunciation}}` — IPA string (e.g. "/ˈpɒz.ɪt/")
-    /// - `{{meanings}}` — numbered meaning blocks generated from the API response
+    /// **Lookup-time variables** (filled after the Cambridge dictionary lookup completes):
+    /// - `{{pronunciation-bre}}` — British English IPA (e.g. "/ˈpɒz.ɪt/")
+    /// - `{{pronunciation-ame}}` — American English IPA (e.g. "/ˈpɑː.zɪt/")
+    /// - `{{cefr}}` — CEFR level badge (e.g. "B2")
+    /// - `{{meanings}}` — definition blocks (definition as heading, patterns, examples)
+    /// - `{{corpus-examples}}` — real-world usage from the Cambridge English Corpus
     /// - `{{see-also}}` — `[[wikilink]]` lines for related words found in the vault
     ///
     /// Any variable can be omitted from a custom template to opt out of that section being auto-filled.
@@ -25,26 +27,27 @@ struct WordPageCreator {
     static let defaultTemplate = """
     # {{word}}
 
-    **Syllables:** {{syllables}} · **Pronunciation:** {{pronunciation}}
+    **Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
 
     ## Sightings
     - {{date}} — *(context sentence where you saw the word)*
 
     ---
 
-    ## Meanings
+    ## Definitions
     {{meanings}}
 
-    ## When to Use
-
-    **Where it fits:**
-    **In casual speech:**
+    ## Corpus Examples
+    {{corpus-examples}}
 
     ---
 
-    ## Word Family
+    ## When to Use
+    {{when-to-use}}
+    ---
 
-    *(list related forms, each with a short example)*
+    ## Word Family
+    {{word-family}}
 
     ---
 
@@ -112,26 +115,63 @@ struct WordPageCreator {
         return defaultTemplate
     }
 
+    /// All lookup-time variable names used in the current template system.
+    static let allLookupVariables = [
+        "{{pronunciation-bre}}", "{{pronunciation-ame}}", "{{cefr}}",
+        "{{meanings}}", "{{corpus-examples}}",
+        "{{when-to-use}}", "{{word-family}}", "{{see-also}}",
+        // Legacy Oxford/MW variables — kept so old pages are still detected as fillable
+        "{{collocations}}", "{{nearby-words}}"
+    ]
+
+    /// Legacy lookup variables (used for migration detection).
+    /// MW-era: {{syllables}}, {{pronunciation}}
+    /// Oxford-era: {{collocations}}, {{nearby-words}} (without {{corpus-examples}})
+    private static let legacyMWVariables = [
+        "{{syllables}}", "{{pronunciation}}"
+    ]
+
+    private static let legacyOxfordVariables = [
+        "{{collocations}}", "{{nearby-words}}"
+    ]
+
     /// Writes the default template to `.wordshunter/template.md`.
-    /// If the file already exists but predates the variable system (no `{{syllables}}`), it is
-    /// replaced with the new default so lookup-time fill works correctly.
+    /// Migration cases:
+    /// - No file exists → create with new Oxford template
+    /// - Old MW-era template (has {{syllables}}) → replace with new Oxford template
+    /// - Old pre-variable template (no lookup vars at all) → replace with new Oxford template
+    /// - Current Oxford-era template (has any new variable) → leave untouched
     static func seedTemplateIfNeeded(vaultPath: String) {
         guard !vaultPath.isEmpty else { return }
         let dotDir = URL(fileURLWithPath: vaultPath).appendingPathComponent(".wordshunter")
         let templateURL = dotDir.appendingPathComponent("template.md")
         try? FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+
         if FileManager.default.fileExists(atPath: templateURL.path) {
-            // Migrate pre-variable templates: if NO lookup-time variable is present, overwrite with
-            // the new default. Checking only one variable would wrongly clobber custom templates
-            // that use some variables but not others (a valid opt-out pattern).
             if let existing = try? String(contentsOf: templateURL, encoding: .utf8) {
-                let hasAnyLookupVar = existing.contains("{{syllables}}")
-                    || existing.contains("{{pronunciation}}")
-                    || existing.contains("{{meanings}}")
-                    || existing.contains("{{see-also}}")
-                if !hasAnyLookupVar {
+                // MW-era template → replace
+                let hasLegacyMWVar = legacyMWVariables.contains { existing.contains($0) }
+                if hasLegacyMWVar {
                     try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                    return
                 }
+                // Oxford-era template (has collocations/nearby but no corpus-examples) → replace
+                let hasLegacyOxfordVar = legacyOxfordVariables.contains { existing.contains($0) }
+                let hasCambridgeVar = existing.contains("{{corpus-examples}}")
+                if hasLegacyOxfordVar && !hasCambridgeVar {
+                    try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                    return
+                }
+                // Cambridge-era template missing new variables → upgrade
+                if hasCambridgeVar && !existing.contains("{{when-to-use}}") {
+                    try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                    return
+                }
+                // Current Cambridge template → leave untouched
+                if hasCambridgeVar { return }
+
+                // Pre-variable template → overwrite
+                try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
             }
             return
         }
