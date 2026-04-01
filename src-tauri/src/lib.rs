@@ -143,7 +143,8 @@ async fn capture_and_process_word(app: AppHandle) {
     // Get config
     let config = {
         let state = app.state::<AppState>();
-        state.config.lock().unwrap().clone()
+        let x = state.config.lock().unwrap().clone();
+        x
     };
 
     let (vault_path, template_path, sound_enabled, bubble_enabled) = match config {

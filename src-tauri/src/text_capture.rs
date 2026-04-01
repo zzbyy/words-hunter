@@ -8,7 +8,7 @@ use thiserror::Error;
 use windows::{
     Win32::UI::Input::KeyboardAndMouse::*,
     Win32::Foundation::*,
-    Win32::System::DataExchange::{OpenClipboard, GetClipboardData, CloseClipboard, CF_UNICODETEXT},
+    Win32::System::DataExchange::{OpenClipboard, GetClipboardData, CloseClipboard},
     Win32::System::Memory::{GlobalLock, GlobalUnlock},
 };
 
@@ -93,16 +93,17 @@ pub fn read_clipboard_word() -> Result<String, CaptureError> {
             .map_err(|e| CaptureError::Win32(e.to_string()))?;
 
         let result = (|| -> Result<String, CaptureError> {
-            let handle = GetClipboardData(CF_UNICODETEXT)
+            // CF_UNICODETEXT = 13
+            let handle = GetClipboardData(13u32)
                 .map_err(|_| CaptureError::ClipboardEmpty)?;
 
-            let ptr = GlobalLock(handle.0 as *mut _);
+            let ptr = GlobalLock(handle);
             if ptr.is_null() {
                 return Err(CaptureError::ClipboardEmpty);
             }
 
             let text = wc_to_string(ptr as *const u16);
-            let _ = GlobalUnlock(handle.0);
+            let _ = GlobalUnlock(handle);
 
             let word = text.trim().to_string();
             if !is_valid_word(&word) {
