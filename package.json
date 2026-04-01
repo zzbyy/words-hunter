@@ -1,0 +1,13 @@
+{
+  "name": "words-hunter",
+  "version": "1.9.0",
+  "description": "Words Hunter — capture words from any app on Windows",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev --no-watch",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

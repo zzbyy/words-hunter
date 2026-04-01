@@ -1,10 +1,48 @@
 # Words Hunter
 
+> **Windows version:** Built with Tauri (Rust + WebView2). Currently in progress.
+
 **Capture any word from any app in under a second. Master it through conversation.**
 
 Words Hunter is a macOS menu bar app for language learners. Hold Option and double-click any word — in Chrome, Books, a terminal, anywhere — and it instantly creates a structured vocabulary page in your Obsidian vault. No context switching. No copy-paste. You stay in your reading flow.
 
 Pair it with the OpenClaw mastery plugin and a conversational AI agent coaches you through spaced-repetition practice sessions directly in Telegram, WeChat, or any other chat app you already use.
+
+---
+
+---
+
+## Building the Windows App
+
+The Windows version is built with **Tauri 2 (Rust + WebView2)**.
+
+### Prerequisites
+
+- **Rust** — install from [rustup.rs](https://rustup.rs)
+- **Node.js 18+** — for Tauri CLI
+- **Windows 10/11** — the app uses Win32 APIs
+
+### Build
+
+```bash
+# Install Tauri CLI
+npm install
+
+# Build the app (produces WordsHunter_x.x.x_x64-setup.exe)
+npm run tauri:build
+
+# Run in development mode
+npm run tauri:dev
+```
+
+The installer will be at: `src-tauri/target/release/bundle/nsis/WordsHunter_x.x.x_x64-setup.exe`
+
+### First launch (Windows)
+
+1. Run the installer or the debug binary
+2. Grant **Accessibility permission** when prompted (Windows UAC + Settings)
+3. The setup window appears — set your Obsidian vault path and template
+4. Alt+double-click on any word to capture
 
 ---
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: transparent;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+    }
+    .bubble {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 10px 18px;
+      border-radius: 24px;
+      box-shadow: 0 4px 24px rgba(102, 126, 234, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
+      font-size: 15px;
+      font-weight: 500;
+      opacity: 0;
+      transform: scale(0.8) translateY(10px);
+      transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .bubble.show {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+    .bubble .icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .bubble .checkmark {
+      display: none;
+    }
+    .bubble.success .checkmark {
+      display: block;
+    }
+    .bubble.success .word {
+      display: none;
+    }
+    .bubble.fade-out {
+      opacity: 0;
+      transform: scale(0.9) translateY(-5px);
+      transition: opacity 0.3s ease-in, transform 0.3s ease-in;
+    }
+  </style>
+</head>
+<body>
+  <div class="bubble" id="bubble">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 6L9 17l-5-5"/>
+    </svg>
+    <svg class="checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+      <path d="M8 12l3 3 5-5"/>
+    </svg>
+    <span class="word" id="word"></span>
+  </div>
+  <script>
+    const { listen } = window.__TAURI__.event;
+    let dismissTimer;
+
+    listen('show-bubble', (event) => {
+      const word = event.payload;
+      const bubble = document.getElementById('bubble');
+      const wordEl = document.getElementById('word');
+      wordEl.textContent = word;
+      bubble.className = 'bubble show';
+
+      clearTimeout(dismissTimer);
+      dismissTimer = setTimeout(() => {
+        bubble.classList.add('fade-out');
+        setTimeout(() => bubble.className = 'bubble', 350);
+      }, 1500);
+    });
+
+    listen('show-bubble-success', (event) => {
+      const word = event.payload;
+      const bubble = document.getElementById('bubble');
+      const wordEl = document.getElementById('word');
+      wordEl.textContent = word;
+      bubble.className = 'bubble success show';
+
+      clearTimeout(dismissTimer);
+      dismissTimer = setTimeout(() => {
+        bubble.classList.add('fade-out');
+        setTimeout(() => bubble.className = 'bubble', 350);
+      }, 1500);
+    });
+  </script>
+</body>
+</html>
