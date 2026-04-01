@@ -23,7 +23,7 @@ static HOTKEY_RUNNING: AtomicBool = AtomicBool::new(false);
 #[cfg(windows)]
 fn is_alt_pressed() -> bool {
     unsafe {
-        (GetAsyncKeyState(VK_MENU.0 as i32) & 0x8000) != 0
+        (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000u16) != 0
     }
 }
 
@@ -63,7 +63,7 @@ pub fn start_hotkey_listener(app: AppHandle) -> Result<(), String> {
                     if msg.message == WM_QUIT {
                         break;
                     }
-                    TranslateMessage(&msg);
+                    let _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 } else {
                     std::thread::sleep(std::time::Duration::from_millis(10));
