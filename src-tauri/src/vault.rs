@@ -94,17 +94,17 @@ pub fn interpolate_template(template: &str, page: &WordPage) -> String {
 
     // Simple variable substitution — mirrors macOS WordPageUpdater
     let vars: HashMap<&str, &str> = HashMap::from([
-        ("{{word}}", &page.word),
-        ("{{date}}", &page.date),
-        ("{{lemma}}", &page.lemma),
-        ("{{pronunciation-bre}}", &page.pronunciation_bre),
-        ("{{pronunciation-ame}}", &page.pronunciation_ame),
-        ("{{meanings}}", &page.meanings),
-        ("{{cefr}}", &page.cefr),
-        ("{{corpus-examples}}", &page.corpus_examples),
-        ("{{see-also}}", &page.see_also),
-        ("{{when-to-use}}", &page.when_to_use),
-        ("{{word-family}}", &page.word_family),
+        ("{{word}}", page.word.as_str()),
+        ("{{date}}", page.date.as_str()),
+        ("{{lemma}}", page.lemma.as_str()),
+        ("{{pronunciation-bre}}", page.pronunciation_bre.as_str()),
+        ("{{pronunciation-ame}}", page.pronunciation_ame.as_str()),
+        ("{{meanings}}", page.meanings.as_str()),
+        ("{{cefr}}", page.cefr.as_str()),
+        ("{{corpus-examples}}", page.corpus_examples.as_str()),
+        ("{{see-also}}", page.see_also.as_str()),
+        ("{{when-to-use}}", page.when_to_use.as_str()),
+        ("{{word-family}}", page.word_family.as_str()),
     ]);
 
     for (var, value) in vars {
@@ -120,7 +120,7 @@ pub fn create_word_page(
     template_path: &str,
     word: &str,
     lemma: &str,
-    extra_vars: HashMap<&str, &str>,
+    extra_vars: HashMap<&str, String>,
 ) -> Result<PathBuf, VaultError> {
     if word_exists(vault_path, word) {
         return Err(VaultError::AlreadyExists(word.to_string()));
@@ -134,14 +134,14 @@ pub fn create_word_page(
     // Apply extra vars (from dictionary lookup)
     for (key, value) in extra_vars {
         match key {
-            "{{pronunciation-bre}}" => page.pronunciation_bre = value.to_string(),
-            "{{pronunciation-ame}}" => page.pronunciation_ame = value.to_string(),
-            "{{meanings}}" => page.meanings = value.to_string(),
-            "{{cefr}}" => page.cefr = value.to_string(),
-            "{{corpus-examples}}" => page.corpus_examples = value.to_string(),
-            "{{see-also}}" => page.see_also = value.to_string(),
-            "{{when-to-use}}" => page.when_to_use = value.to_string(),
-            "{{word-family}}" => page.word_family = value.to_string(),
+            "{{pronunciation-bre}}" => page.pronunciation_bre = value,
+            "{{pronunciation-ame}}" => page.pronunciation_ame = value,
+            "{{meanings}}" => page.meanings = value,
+            "{{cefr}}" => page.cefr = value,
+            "{{corpus-examples}}" => page.corpus_examples = value,
+            "{{see-also}}" => page.see_also = value,
+            "{{when-to-use}}" => page.when_to_use = value,
+            "{{word-family}}" => page.word_family = value,
             _ => {}
         }
     }
@@ -164,7 +164,7 @@ pub fn create_word_page(
 pub fn update_word_page(
     vault_path: &str,
     word: &str,
-    extra_vars: HashMap<&str, &str>,
+    extra_vars: HashMap<&str, String>,
 ) -> Result<(), VaultError> {
     let file_path = vault_path_to_file_path(vault_path, word);
     if !file_path.exists() {
@@ -180,14 +180,14 @@ pub fn update_word_page(
     // Parse existing content to extract already-filled variables
     for (key, value) in extra_vars {
         match key {
-            "{{pronunciation-bre}}" => page.pronunciation_bre = value.to_string(),
-            "{{pronunciation-ame}}" => page.pronunciation_ame = value.to_string(),
-            "{{meanings}}" => page.meanings = value.to_string(),
-            "{{cefr}}" => page.cefr = value.to_string(),
-            "{{corpus-examples}}" => page.corpus_examples = value.to_string(),
-            "{{see-also}}" => page.see_also = value.to_string(),
-            "{{when-to-use}}" => page.when_to_use = value.to_string(),
-            "{{word-family}}" => page.word_family = value.to_string(),
+            "{{pronunciation-bre}}" => page.pronunciation_bre = value,
+            "{{pronunciation-ame}}" => page.pronunciation_ame = value,
+            "{{meanings}}" => page.meanings = value,
+            "{{cefr}}" => page.cefr = value,
+            "{{corpus-examples}}" => page.corpus_examples = value,
+            "{{see-also}}" => page.see_also = value,
+            "{{when-to-use}}" => page.when_to_use = value,
+            "{{word-family}}" => page.word_family = value,
             _ => {}
         }
     }

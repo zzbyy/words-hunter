@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::cell::RefCell;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 use tracing::{info, error, debug, warn};
 
 #[cfg(windows)]
@@ -11,8 +11,6 @@ use windows::{
     Win32::Foundation::*,
     Win32::UI::Input::KeyboardAndMouse::*,
     Win32::UI::WindowsAndMessaging::*,
-    Win32::System::Threading::*,
-    Win32::System::LibraryLoader::*,
 };
 
 thread_local! {
@@ -31,13 +29,10 @@ fn is_alt_pressed() -> bool {
 
 #[cfg(windows)]
 pub fn start_hotkey_listener(app: AppHandle) -> Result<(), String> {
-    use std::thread;
-
     if HOTKEY_RUNNING.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
 
-    // Store app handle in thread-local for use in the hook callback
     APP_HANDLE.with(|h| {
         *h.borrow_mut() = Some(app.clone());
     });
@@ -48,7 +43,7 @@ pub fn start_hotkey_listener(app: AppHandle) -> Result<(), String> {
         unsafe {
             let hook_proc: HOOKPROC = Some(hook_callback);
 
-            let hook = SetWindowsHookExW(WH_MOUSE_LL, hook_proc, HINSTANCE(0), 0);
+            let hook = SetWindowsHookExW(WH_MOUSE_LL, hook_proc, HINSTANCE(std::ptr::null_mut()), 0);
             let hook = match hook {
                 Ok(h) => {
                     info!("Mouse hook installed");
@@ -61,10 +56,9 @@ pub fn start_hotkey_listener(app: AppHandle) -> Result<(), String> {
                 }
             };
 
-            // Message loop
             let mut msg = MSG::default();
             while HOTKEY_RUNNING.load(Ordering::SeqCst) {
-                let ret = PeekMessageW(&mut msg, HWND(0), 0, 0, PM_REMOVE);
+                let ret = PeekMessageW(&mut msg, HWND(std::ptr::null_mut()), 0, 0, PM_REMOVE);
                 if ret.as_bool() {
                     if msg.message == WM_QUIT {
                         break;
@@ -72,7 +66,6 @@ pub fn start_hotkey_listener(app: AppHandle) -> Result<(), String> {
                     TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                 } else {
-                    // No message — sleep briefly to avoid spinning
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
@@ -88,7 +81,6 @@ pub fn start_hotkey_listener(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// Low-level mouse hook callback
 #[cfg(windows)]
 unsafe extern "system" fn hook_callback(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && wparam.0 as u32 == WM_LBUTTONDBLCLK {
@@ -106,7 +98,7 @@ unsafe extern "system" fn hook_callback(code: i32, wparam: WPARAM, lparam: LPARA
         }
     }
 
-    CallNextHookEx(HWND(0), code, wparam, lparam)
+    CallNextHookEx(HHOOK(std::ptr::null_mut()), code, wparam, lparam)
 }
 
 #[cfg(not(windows))]

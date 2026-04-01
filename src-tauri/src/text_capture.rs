@@ -1,16 +1,15 @@
 //! Text capture: simulates Ctrl+C and reads clipboard content.
 //! Mirrors macOS TextCapture.swift behavior.
 
-use tracing::{debug, info, warn};
+use tracing::warn;
 use thiserror::Error;
 
 #[cfg(windows)]
 use windows::{
     Win32::UI::Input::KeyboardAndMouse::*,
-    Win32::UI::WindowsAndMessaging::*,
     Win32::Foundation::*,
-    Win32::System::Threading::*,
-    Win32::System::LibraryLoader::*,
+    Win32::System::DataExchange::{OpenClipboard, GetClipboardData, CloseClipboard, CF_UNICODETEXT},
+    Win32::System::Memory::{GlobalLock, GlobalUnlock},
 };
 
 #[derive(Error, Debug)]
@@ -28,24 +27,20 @@ fn is_valid_word(s: &str) -> bool {
     if s.is_empty() || s.len() > 64 {
         return false;
     }
-    // Must contain at least one letter
     s.chars().any(|c| c.is_alphabetic())
-        // Should not be a sentence/phrase
         && !s.contains(' ')
-        // Should not have many special chars
         && s.chars().filter(|c| !c.is_alphanumeric()).count() <= 1
 }
 
 #[cfg(windows)]
 pub fn simulate_ctrl_c() -> Result<(), CaptureError> {
     unsafe {
-        // Alt is VK_MENU (0x12), Ctrl is VK_CONTROL (0x11), C is 'C' (0x43)
-        let keybd_down = |vk: u16| -> Result<(), CaptureError> {
-            let scan = MapVirtualKeyW(vk as u32, 0) as u16;
+        let keybd_down = |vk: VIRTUAL_KEY| -> Result<(), CaptureError> {
+            let scan = MapVirtualKeyW(vk.0 as u32, MAP_VIRTUAL_KEY_TYPE(0)) as u16;
             let input = KEYBDINPUT {
                 wVk: vk,
                 wScan: scan,
-                dwFlags: 0,
+                dwFlags: KEYBD_EVENT_FLAGS(0),
                 time: 0,
                 dwExtraInfo: 0,
             };
@@ -60,8 +55,8 @@ pub fn simulate_ctrl_c() -> Result<(), CaptureError> {
             Ok(())
         };
 
-        let keybd_up = |vk: u16| -> Result<(), CaptureError> {
-            let scan = MapVirtualKeyW(vk as u32, 0) as u16;
+        let keybd_up = |vk: VIRTUAL_KEY| -> Result<(), CaptureError> {
+            let scan = MapVirtualKeyW(vk.0 as u32, MAP_VIRTUAL_KEY_TYPE(0)) as u16;
             let input = KEYBDINPUT {
                 wVk: vk,
                 wScan: scan,
@@ -80,13 +75,9 @@ pub fn simulate_ctrl_c() -> Result<(), CaptureError> {
             Ok(())
         };
 
-        // Ctrl down
         keybd_down(VK_CONTROL)?;
-        // C down
-        keybd_down(b'C' as u16)?;
-        // C up
-        keybd_up(b'C' as u16)?;
-        // Ctrl up
+        keybd_down(VIRTUAL_KEY(b'C' as u16))?;
+        keybd_up(VIRTUAL_KEY(b'C' as u16))?;
         keybd_up(VK_CONTROL)?;
 
         Ok(())
@@ -98,23 +89,20 @@ pub fn read_clipboard_word() -> Result<String, CaptureError> {
     use std::ptr;
 
     unsafe {
-        if !OpenClipboard(HWND(ptr::null_mut())).as_bool() {
-            return Err(CaptureError::Win32("OpenClipboard failed".to_string()));
-        }
+        OpenClipboard(HWND(ptr::null_mut()))
+            .map_err(|e| CaptureError::Win32(e.to_string()))?;
 
         let result = (|| -> Result<String, CaptureError> {
-            let handle = GetClipboardData(CF_UNICODETEXT);
-            if handle.is_invalid() {
-                return Err(CaptureError::ClipboardEmpty);
-            }
+            let handle = GetClipboardData(CF_UNICODETEXT)
+                .map_err(|_| CaptureError::ClipboardEmpty)?;
 
-            let ptr = windows::Win32::System::Memory::GlobalLock(handle.0 as *mut _);
+            let ptr = GlobalLock(handle.0 as *mut _);
             if ptr.is_null() {
                 return Err(CaptureError::ClipboardEmpty);
             }
 
             let text = wc_to_string(ptr as *const u16);
-            windows::Win32::System::Memory::GlobalUnlock(handle.0);
+            let _ = GlobalUnlock(handle.0);
 
             let word = text.trim().to_string();
             if !is_valid_word(&word) {
@@ -144,7 +132,6 @@ fn wc_to_string(ptr: *const u16) -> String {
 #[cfg(windows)]
 pub fn capture_word() -> Result<String, CaptureError> {
     simulate_ctrl_c()?;
-    // Small delay to let clipboard update
     std::thread::sleep(std::time::Duration::from_millis(50));
     read_clipboard_word()
 }

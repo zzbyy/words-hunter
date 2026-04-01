@@ -8,7 +8,7 @@ pub mod audio;
 pub mod config;
 
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Listener, Manager};
 use tracing::{info, error, warn};
 
 pub struct AppState {
