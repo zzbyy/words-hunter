@@ -6,6 +6,14 @@ Format: [version] - YYYY-MM-DD
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **OpenClaw plugin** — moved to standalone repository [openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter). The `openclaw-plugin/` directory is removed from this repo; install/update instructions are in the plugin README.
+
+---
+
 ## [1.8.0.0] - 2026-03-31
 
 ### Added
@@ -94,7 +102,7 @@ Format: [version] - YYYY-MM-DD
 
 ### Added
 
-- **OpenClaw mastery plugin** (`openclaw-plugin/`) — TypeScript plugin for vocabulary mastery via conversational AI:
+- **OpenClaw mastery plugin** ([openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter)) — TypeScript plugin for vocabulary mastery via conversational AI:
   - `scan_vault` — lists due/new/all words from `.wordshunter/mastery.json` (O(1), no per-file scanning)
   - `load_word` — loads a word page and its mastery state
   - `record_mastery` — records a practice session, advances Leitner SRS schedule, writes history, regenerates callout

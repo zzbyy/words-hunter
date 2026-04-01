@@ -56,7 +56,7 @@ Word advances through Leitner SRS boxes until mastered
 
 ### AI mastery via OpenClaw (v1.7+)
 
-The `openclaw-plugin/` directory contains a TypeScript plugin for the [OpenClaw](https://openclaw.dev) platform. Install it once and an AI agent coaches you through vocabulary practice in any chat app you already use.
+The TypeScript plugin for [OpenClaw](https://openclaw.dev) lives in its own repository: **[openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter)**. Install it once and an AI agent coaches you through vocabulary practice in any chat app you already use.
 
 - **Spaced repetition (SRS)** — Leitner 5-box system. Words in box 1 come back in 1 day; box 5 in 30 days. Miss the 85-point threshold and the word drops a box.
 - **Conversational practice** — the agent introduces the word, asks you to use it in a sentence, gives feedback, and scores your best attempt.
@@ -131,20 +131,14 @@ Click **Edit Word Template…** in Preferences to open `.wordshunter/template.md
 
 ### OpenClaw mastery plugin (optional)
 
-The mastery plugin connects Words Hunter to OpenClaw, an AI agent platform.
+The mastery plugin connects Words Hunter to OpenClaw, an AI agent platform. **Source and install instructions:** [github.com/zzbyy/openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter) (npm tarball, or GitHub source archive — see that README).
 
 **Prerequisites:** [OpenClaw](https://openclaw.dev) installed and configured with at least one channel connector (Telegram, WeChat, Feishu, WhatsApp, etc.).
 
-```bash
-cd openclaw-plugin
-npm install
-npm run build
-```
-
-Install the plugin in OpenClaw:
+**Quick install** (after the package is published to npm as `words-hunter-openclaw`):
 
 ```bash
-openclaw plugin install ./openclaw-plugin
+openclaw plugins install words-hunter-openclaw
 ```
 
 That's it. The plugin discovers your vault via `.wordshunter/config.json`, which Words Hunter writes automatically each time you save settings.
@@ -319,7 +313,7 @@ Words Hunter is two independent systems connected by a single JSON file.
 
 All file writes in both the Swift app and TypeScript plugin use atomic rename (write to tmp → rename). See `SCHEMA.md` for the full format contract.
 
-**Test suite:** 69 Vitest unit tests across 11 files (TypeScript plugin). All tests use synthetic fixtures — no personal data in the repo.
+**Test suite:** Vitest unit tests for the OpenClaw plugin run in [openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter). All tests use synthetic fixtures — no personal data in the repo.
 
 ---
 
@@ -335,19 +329,8 @@ Words Hunter/
 │   │   └── Models/              # AppSettings (UserDefaults + config bridge export)
 │   └── WordsHunter/
 │       └── main.swift           # App entry point + AppDelegate
-├── openclaw-plugin/             # TypeScript OpenClaw vocabulary mastery plugin
-│   ├── src/
-│   │   ├── index.ts             # Plugin entry: tools, crons, hooks
-│   │   ├── vault.ts             # Vault I/O, mastery.json, validateWord
-│   │   ├── types.ts             # ToolResult<T> discriminated union + error codes
-│   │   ├── srs/scheduler.ts     # Leitner SRS (5 boxes, 85-point threshold)
-│   │   ├── tools/               # scan_vault, load_word, record_mastery,
-│   │   │                        # update_page, record_sighting, vault_summary
-│   │   ├── hooks/               # sighting-hook.ts
-│   │   └── importer.ts          # One-time import of untracked word pages
-│   ├── tests/                   # 69 Vitest tests across 11 files
-│   └── SKILL.md                 # OpenClaw agent conversation flow spec
 ├── SCHEMA.md                    # Format contract: mastery.json, config.json, callouts
+│                                # OpenClaw plugin: github.com/zzbyy/openclaw-words-hunter
 ├── CHANGELOG.md                 # Version history
 ├── TODOS.md                     # Deferred work and sprint backlog
 └── PRD.md                       # Product requirements (v1.0 origin + version notes)
@@ -369,16 +352,7 @@ swift test           # run tests
 
 The app requires macOS 13+. The `CGEventTap` and Accessibility APIs used for capture are macOS-only — there is no cross-platform path.
 
-**OpenClaw plugin (TypeScript):**
-
-```bash
-cd openclaw-plugin
-npm install
-npm run build        # compile to dist/
-npm test             # run Vitest suite (69 tests)
-```
-
-Tests use synthetic fixtures. Never commit real vault data or personal word pages.
+**OpenClaw plugin (TypeScript):** develop in [openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter) (`npm install`, `npm run build`, `npm test`). Tests use synthetic fixtures. Never commit real vault data or personal word pages.
 
 **Schema changes:**
 

@@ -23,7 +23,7 @@ Eliminates the context-switching cost of manually creating vocabulary pages. The
 - Not cross-platform — macOS only
 
 > **Note (v1.5+/v1.8+):** Words Hunter auto-fills definitions from the Oxford Learner's Dictionary by default (no API key required). Merriam-Webster is available as an optional fallback. See Settings → Dictionary Lookup.
-> **Note (v1.7+):** An OpenClaw TypeScript plugin (`openclaw-plugin/`) adds AI-assisted vocabulary mastery sessions, SRS scheduling, and sighting tracking. See `SCHEMA.md` and `openclaw-plugin/SKILL.md`.
+> **Note (v1.7+):** An OpenClaw TypeScript plugin ([openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter)) adds AI-assisted vocabulary mastery sessions, SRS scheduling, and sighting tracking. See `SCHEMA.md` and the plugin repo's `SKILL.md`.
 
 ---
 
@@ -249,19 +249,7 @@ Words Hunter/
 │   │       └── AppSettings.swift          # UserDefaults wrapper + config bridge export
 │   └── WordsHunter/
 │       └── main.swift                     # Entry point: NSApplication bootstrap + AppDelegate
-├── openclaw-plugin/                       # TypeScript OpenClaw vocabulary mastery plugin
-│   ├── src/
-│   │   ├── index.ts                       # Plugin entry point (tools, crons, hooks)
-│   │   ├── vault.ts                       # Vault I/O, mastery.json R/W, validateWord
-│   │   ├── types.ts                       # ToolResult<T> discriminated union
-│   │   ├── srs/scheduler.ts               # Leitner SRS (5 boxes, 85-point threshold)
-│   │   ├── tools/                         # scan_vault, load_word, record_mastery, …
-│   │   ├── hooks/sighting-hook.ts         # Outgoing message sighting detection
-│   │   └── importer.ts                    # One-time import of untracked word pages
-│   ├── tests/                             # Vitest unit tests (69 tests, 11 files)
-│   ├── SKILL.md                           # OpenClaw agent conversation flow spec
-│   └── package.json
-├── SCHEMA.md                              # Schema contract: mastery.json, config.json, callouts
+├── SCHEMA.md                              # Schema contract + OpenClaw plugin repo: github.com/zzbyy/openclaw-words-hunter
 ├── CHANGELOG.md                           # Version history
 ├── TODOS.md                               # Deferred work and sprint backlog
 ├── scripts/
