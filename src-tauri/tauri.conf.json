@@ -4,7 +4,6 @@
   "version": "1.9.0.0",
   "identifier": "com.wordshunter.app",
   "build": {
-    "devtools": true,
     "frontendDist": "../src",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "",
