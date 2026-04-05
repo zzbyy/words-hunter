@@ -29,11 +29,6 @@ built-in default). Placeholders: `{{word}}` (lemma) and `{{date}}` (YYYY-MM-DD).
 
 **Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
 
-## Sightings
-- {{date}} — *(context sentence where you saw the word)*
-
----
-
 ## Meanings
 {{meanings}}
 
@@ -98,7 +93,7 @@ removes sections it did not write.
 - `### Best Sentences` — append-only. Never modify or remove existing entries.
 - `### History` — append-only. One line per session. Never modify existing entries.
 - `## Graduation` — written once. Never overwritten.
-- `## Sightings` — legacy section in word pages. New sightings are written to `sightings.json` (see § 6).
+- `## Sightings` — removed from new pages. Sightings are now stored in `sightings.json` (see § 6). Old pages may still have this section as historical data.
 
 ---
 

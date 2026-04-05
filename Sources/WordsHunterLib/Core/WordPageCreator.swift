@@ -29,11 +29,6 @@ struct WordPageCreator {
 
     **Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
 
-    ## Sightings
-    - {{date}} — *(context sentence where you saw the word)*
-
-    ---
-
     ## Definitions
     {{meanings}}
 

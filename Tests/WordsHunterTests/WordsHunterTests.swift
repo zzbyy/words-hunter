@@ -306,16 +306,10 @@ final class WordPageCreatorTests: XCTestCase {
         XCTAssertTrue(content.contains("**Pronunciation:**"))
     }
 
-    func testCreatePage_sightingsWithDate() {
-        let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
-        let content = makeTemplate(lemma: "posit", date: dateString)
-        XCTAssertTrue(content.contains("- \(dateString) — *(context sentence where you saw the word)*"))
-    }
-
     func testCreatePage_allSectionsPresent() {
         let dateString = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
         let content = makeTemplate(lemma: "posit", date: dateString)
-        for section in ["Sightings", "Definitions", "Corpus Examples", "When to Use", "Word Family", "See Also", "Memory Tip"] {
+        for section in ["Definitions", "Corpus Examples", "When to Use", "Word Family", "See Also", "Memory Tip"] {
             XCTAssertTrue(content.contains("## \(section)"), "Missing section: \(section)")
         }
     }
@@ -727,11 +721,6 @@ final class WordPageUpdaterTests: XCTestCase {
     # delegate
 
     **Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
-
-    ## Sightings
-    - 2026-03-28 — *(context sentence where you saw the word)*
-
-    ---
 
     ## Definitions
     {{meanings}}
