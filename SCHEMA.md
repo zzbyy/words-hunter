@@ -29,11 +29,6 @@ built-in default). Placeholders: `{{word}}` (lemma) and `{{date}}` (YYYY-MM-DD).
 
 **Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
 
-## Sightings
-- {{date}} — *(context sentence where you saw the word)*
-
----
-
 ## Meanings
 {{meanings}}
 
@@ -98,7 +93,7 @@ removes sections it did not write.
 - `### Best Sentences` — append-only. Never modify or remove existing entries.
 - `### History` — append-only. One line per session. Never modify existing entries.
 - `## Graduation` — written once. Never overwritten.
-- `## Sightings` — append-only. Each sighting is one line. Written by `record_sighting`.
+- `## Sightings` — removed from new pages. Sightings are now stored in `sightings.json` (see § 6). Old pages may still have this section as historical data.
 
 ---
 
@@ -250,20 +245,82 @@ When `failures` is empty, omit the Failures line.
 
 ---
 
-## 6. Sightings Format
+## 6. Sightings Store (`sightings.json`)
 
-Appended to the `## Sightings` section of the word page by `record_sighting`.
+**Location:** `{vault_root}/.wordshunter/sightings.json`
 
-```markdown
-## Sightings
-- 2026-03-29 — *(context sentence where you saw the word)*
-- 2026-03-30 — "I posited that the project would ship on time." *(Telegram — work chat)*
+Centralized, event-based store for all word sightings. Written by the macOS app (Swift),
+the Windows app (Rust/Tauri), and the OpenClaw TypeScript plugin. One event per user
+action — if a message contains multiple vault words, they share a single event.
+
+The `## Sightings` section in word `.md` pages (§1) is legacy — still present in
+templates but no longer the source of truth for sighting data.
+
+### Schema (v2)
+
+```json
+{
+  "version": 2,
+  "days": {
+    "2026-04-04": [
+      {
+        "timestamp": "2026-04-04T21:15",
+        "channel": "Telegram",
+        "words": {
+          "deliberate": "The deliberate attempt to suppress the report.",
+          "suppress": "The deliberate attempt to suppress the report."
+        }
+      },
+      {
+        "timestamp": "2026-04-04T21:30",
+        "words": {
+          "posit": ""
+        }
+      }
+    ]
+  }
+}
 ```
 
-Format per sighting line:
+### Field definitions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | `number` | Schema version. Currently `2`. |
+| `days` | `Record<string, SightingEvent[]>` | Keyed by YYYY-MM-DD date. |
+| `timestamp` | `string` | ISO minute precision: `"YYYY-MM-DDTHH:mm"`. |
+| `channel` | `string?` | Source app or channel (e.g. `"Telegram"`, `"Safari"`). Omitted from JSON when absent. |
+| `words` | `Record<string, string>` | Lowercase word → context sentence. Empty string if no sentence captured. |
+
+### Write protocol
+
+1. **Read** — parse `sightings.json` (or create empty v2 store if missing)
+2. **Migrate** — if `version == 1`, convert to v2 in memory (see below)
+3. **Modify** — append new `SightingEvent` to `days[YYYY-MM-DD]`
+4. **Prune** — drop days older than 30 from today
+5. **Write** — atomic temp+rename with sorted keys and pretty-printed JSON
+
+### v1 → v2 migration
+
+If the store has `version: 1` (word-keyed format), readers convert transparently:
+
 ```
-- {YYYY-MM-DD} — "{exact sentence or excerpt}" *({source channel})*
+v1: days["2026-04-04"]["deliberate"] = [{ date, sentence, channel }]
+v2: days["2026-04-04"] = [{ timestamp: "2026-04-04T00:00", channel, words: { deliberate: sentence } }]
 ```
+
+Entries with the same date and channel are coalesced into a single event. The next write
+saves as v2 automatically.
+
+### Auto-prune
+
+Days older than 30 are dropped on every write. This keeps the file small and bounded.
+
+### Cross-platform consistency
+
+- Swift uses `JSONEncoder` with `.sortedKeys` + `.prettyPrinted`
+- Rust uses `BTreeMap` (inherently sorted) + `serde_json::to_string_pretty`
+- TypeScript plugin uses `proper-lockfile` (mkdir-based) for locking in multi-writer scenarios
 
 ---
 
