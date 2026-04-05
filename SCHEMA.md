@@ -250,36 +250,39 @@ When `failures` is empty, omit the Failures line.
 
 ---
 
-## 6. Sightings Format (`sightings.json`)
+## 6. Sightings Store (`sightings.json`)
 
 **Location:** `{vault_root}/.wordshunter/sightings.json`
-**Lock file:** `{vault_root}/.wordshunter/.sightings.lock` (mkdir-based directory lock)
 
-Centralized store for all word sightings. Written by the macOS app (Swift), the Windows
-app (Rust/Tauri), and the OpenClaw TypeScript plugin. Replaces the legacy per-word-page
-`## Sightings` markdown lines (existing lines are left as historical data, not updated).
+Centralized, event-based store for all word sightings. Written by the macOS app (Swift),
+the Windows app (Rust/Tauri), and the OpenClaw TypeScript plugin. One event per user
+action — if a message contains multiple vault words, they share a single event.
 
-### Schema
+The `## Sightings` section in word `.md` pages (§1) is legacy — still present in
+templates but no longer the source of truth for sighting data.
+
+### Schema (v2)
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "days": {
-    "2026-04-04": {
-      "deliberate": [
-        {
-          "date": "2026-04-04",
-          "sentence": "(captured from Safari)",
-          "channel": "telegram"
+    "2026-04-04": [
+      {
+        "timestamp": "2026-04-04T21:15",
+        "channel": "Telegram",
+        "words": {
+          "deliberate": "The deliberate attempt to suppress the report.",
+          "suppress": "The deliberate attempt to suppress the report."
         }
-      ],
-      "posit": [
-        {
-          "date": "2026-04-04",
-          "sentence": "I posited that the project would ship on time."
+      },
+      {
+        "timestamp": "2026-04-04T21:30",
+        "words": {
+          "posit": ""
         }
-      ]
-    }
+      }
+    ]
   }
 }
 ```
@@ -288,27 +291,41 @@ app (Rust/Tauri), and the OpenClaw TypeScript plugin. Replaces the legacy per-wo
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `version` | `number` | Schema version. Currently `1`. |
-| `days` | `Record<string, Record<string, SightingEntry[]>>` | Outer key: YYYY-MM-DD date. Inner key: lowercase word. |
-| `date` | `string` | YYYY-MM-DD when the sighting was recorded. |
-| `sentence` | `string` | Context sentence or placeholder (e.g. `"(captured from Safari)"`). |
-| `channel` | `string?` | Source channel (e.g. `"telegram"`). Omitted from JSON when absent. |
+| `version` | `number` | Schema version. Currently `2`. |
+| `days` | `Record<string, SightingEvent[]>` | Keyed by YYYY-MM-DD date. |
+| `timestamp` | `string` | ISO minute precision: `"YYYY-MM-DDTHH:mm"`. |
+| `channel` | `string?` | Source app or channel (e.g. `"Telegram"`, `"Safari"`). Omitted from JSON when absent. |
+| `words` | `Record<string, string>` | Lowercase word → context sentence. Empty string if no sentence captured. |
 
 ### Write protocol
 
-1. **Lock** — `mkdir .wordshunter/.sightings.lock` (POSIX atomic; fails if already held)
-2. **Read** — parse `sightings.json` (or create empty store if missing)
-3. **Modify** — append new entry under `days[date][word]`
-4. **Write** — atomic temp+rename with sorted keys and pretty-printed JSON
-5. **Unlock** — `rmdir .wordshunter/.sightings.lock`
+1. **Read** — parse `sightings.json` (or create empty v2 store if missing)
+2. **Migrate** — if `version == 1`, convert to v2 in memory (see below)
+3. **Modify** — append new `SightingEvent` to `days[YYYY-MM-DD]`
+4. **Prune** — drop days older than 30 from today
+5. **Write** — atomic temp+rename with sorted keys and pretty-printed JSON
 
-Stale lock detection: if the lock directory's mtime is older than 10 seconds, remove and retry.
+### v1 → v2 migration
+
+If the store has `version: 1` (word-keyed format), readers convert transparently:
+
+```
+v1: days["2026-04-04"]["deliberate"] = [{ date, sentence, channel }]
+v2: days["2026-04-04"] = [{ timestamp: "2026-04-04T00:00", channel, words: { deliberate: sentence } }]
+```
+
+Entries with the same date and channel are coalesced into a single event. The next write
+saves as v2 automatically.
+
+### Auto-prune
+
+Days older than 30 are dropped on every write. This keeps the file small and bounded.
 
 ### Cross-platform consistency
 
 - Swift uses `JSONEncoder` with `.sortedKeys` + `.prettyPrinted`
 - Rust uses `BTreeMap` (inherently sorted) + `serde_json::to_string_pretty`
-- TypeScript plugin uses `proper-lockfile` (also mkdir-based) for compatible locking
+- TypeScript plugin uses `proper-lockfile` (mkdir-based) for locking in multi-writer scenarios
 
 ---
 

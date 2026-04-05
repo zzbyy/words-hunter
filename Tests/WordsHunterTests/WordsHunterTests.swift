@@ -545,82 +545,118 @@ final class SightingsFileTests: XCTestCase {
         super.tearDown()
     }
 
-    func testReadSightings_missingFile() {
+    func testRead_missingFile_returnsNil() {
         let result = SightingsFile.read(vaultPath: tempVault.path)
         XCTAssertNil(result, "Reading from a vault with no sightings.json should return nil")
     }
 
-    func testReadSightings_roundTrip() throws {
-        let entry = SightingEntry(date: "2026-04-04", sentence: "Test sentence.", channel: "telegram")
-        let store = SightingsStore(version: 1, days: [
-            "2026-04-04": ["posit": [entry]]
+    func testRoundTrip() throws {
+        let event = SightingEvent(
+            timestamp: "2026-04-04T21:15",
+            channel: "Telegram",
+            words: ["posit": "I posit that this works."]
+        )
+        let store = SightingsStoreData(version: 2, days: [
+            "2026-04-04": [event]
         ])
         try SightingsFile.write(store, vaultPath: tempVault.path)
 
         let loaded = SightingsFile.read(vaultPath: tempVault.path)
         XCTAssertNotNil(loaded)
-        XCTAssertEqual(loaded?.version, 1)
-        XCTAssertEqual(loaded?.days["2026-04-04"]?["posit"]?.count, 1)
-        XCTAssertEqual(loaded?.days["2026-04-04"]?["posit"]?.first?.sentence, "Test sentence.")
-        XCTAssertEqual(loaded?.days["2026-04-04"]?["posit"]?.first?.channel, "telegram")
+        XCTAssertEqual(loaded?.version, 2)
+        XCTAssertEqual(loaded?.days["2026-04-04"]?.count, 1)
+        XCTAssertEqual(loaded?.days["2026-04-04"]?.first?.channel, "Telegram")
+        XCTAssertEqual(loaded?.days["2026-04-04"]?.first?.words["posit"], "I posit that this works.")
     }
 
     func testRecordSighting_createsFile() {
-        let fileURL = SightingsFile.url(vaultPath: tempVault.path)
+        let fileURL = SightingsFile.sightingsURL(vaultPath: tempVault.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
 
         SightingsFile.recordSighting(
-            word: "deliberate", sentence: "She was deliberate.",
-            channel: nil, vaultPath: tempVault.path
+            word: "deliberate", sentence: "",
+            channel: "Safari", vaultPath: tempVault.path
         )
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
         let store = SightingsFile.read(vaultPath: tempVault.path)
         XCTAssertNotNil(store)
-        XCTAssertEqual(store?.version, 1)
+        XCTAssertEqual(store?.version, 2)
+        let today = SightingsFile.todayString()
+        XCTAssertEqual(store?.days[today]?.count, 1)
+        XCTAssertEqual(store?.days[today]?.first?.words["deliberate"], "")
+        XCTAssertEqual(store?.days[today]?.first?.channel, "Safari")
     }
 
-    func testRecordSighting_appendsToExistingDay() {
+    func testRecordSighting_appendsToDay() {
         SightingsFile.recordSighting(
-            word: "posit", sentence: "First.", channel: nil, vaultPath: tempVault.path
+            word: "posit", sentence: "", channel: nil, vaultPath: tempVault.path
         )
         SightingsFile.recordSighting(
-            word: "posit", sentence: "Second.", channel: nil, vaultPath: tempVault.path
+            word: "deliberate", sentence: "", channel: nil, vaultPath: tempVault.path
         )
 
         let store = SightingsFile.read(vaultPath: tempVault.path)
         let today = SightingsFile.todayString()
-        let entries = store?.days[today]?["posit"]
-        XCTAssertEqual(entries?.count, 2)
-        XCTAssertEqual(entries?[0].sentence, "First.")
-        XCTAssertEqual(entries?[1].sentence, "Second.")
+        XCTAssertEqual(store?.days[today]?.count, 2, "Two captures should produce two events")
     }
 
     func testRecordSighting_nilChannel() throws {
-        let entry = SightingEntry(date: "2026-04-04", sentence: "Test sentence.", channel: nil)
-        let store = SightingsStore(version: 1, days: [
-            "2026-04-04": ["test": [entry]]
+        let event = SightingEvent(timestamp: "2026-04-04T21:15", channel: nil, words: ["test": ""])
+        let store = SightingsStoreData(version: 2, days: [
+            "2026-04-04": [event]
         ])
         try SightingsFile.write(store, vaultPath: tempVault.path)
 
-        let fileURL = SightingsFile.url(vaultPath: tempVault.path)
+        let fileURL = SightingsFile.sightingsURL(vaultPath: tempVault.path)
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         XCTAssertFalse(content.contains("\"channel\""), "channel key must be omitted when nil")
     }
 
-    func testRecordSighting_multipleWords() {
-        SightingsFile.recordSighting(
-            word: "posit", sentence: "Posit sentence.", channel: nil, vaultPath: tempVault.path
-        )
-        SightingsFile.recordSighting(
-            word: "deliberate", sentence: "Deliberate sentence.", channel: nil, vaultPath: tempVault.path
-        )
+    func testMigrateV1ToV2() throws {
+        // Write v1 JSON directly
+        let v1JSON = """
+        {
+            "version": 1,
+            "days": {
+                "2026-04-04": {
+                    "posit": [{"date": "2026-04-04", "sentence": "I posit this.", "channel": "Telegram"}],
+                    "deliberate": [{"date": "2026-04-04", "sentence": "Be deliberate.", "channel": "Telegram"}]
+                }
+            }
+        }
+        """
+        let fileURL = SightingsFile.sightingsURL(vaultPath: tempVault.path)
+        try v1JSON.write(to: fileURL, atomically: true, encoding: .utf8)
 
         let store = SightingsFile.read(vaultPath: tempVault.path)
+        XCTAssertNotNil(store)
+        XCTAssertEqual(store?.version, 2)
+        let events = store?.days["2026-04-04"]
+        // Both words had same channel → coalesced into one event
+        XCTAssertEqual(events?.count, 1)
+        XCTAssertEqual(events?.first?.timestamp, "2026-04-04T00:00")
+        XCTAssertEqual(events?.first?.words.count, 2)
+        XCTAssertEqual(events?.first?.words["posit"], "I posit this.")
+        XCTAssertEqual(events?.first?.words["deliberate"], "Be deliberate.")
+    }
+
+    func testAutoprune() throws {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone.current
+        let oldDate = fmt.string(from: Calendar.current.date(byAdding: .day, value: -60, to: Date())!)
         let today = SightingsFile.todayString()
-        XCTAssertNotNil(store?.days[today]?["posit"])
-        XCTAssertNotNil(store?.days[today]?["deliberate"])
-        XCTAssertEqual(store?.days[today]?.count, 2)
+
+        let store = SightingsStoreData(version: 2, days: [
+            oldDate: [SightingEvent(timestamp: "\(oldDate)T10:00", channel: nil, words: ["old": ""])],
+            today: [SightingEvent(timestamp: "\(today)T10:00", channel: nil, words: ["new": ""])]
+        ])
+        try SightingsFile.write(store, vaultPath: tempVault.path)
+
+        let loaded = SightingsFile.read(vaultPath: tempVault.path)
+        XCTAssertNil(loaded?.days[oldDate], "Day 60 days ago should be pruned")
+        XCTAssertNotNil(loaded?.days[today], "Today should be kept")
     }
 }
 

@@ -100,8 +100,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             showBubble(for: captured.word)
             SightingsFile.recordSighting(
                 word: captured.lemma,
-                sentence: "(captured from \(sourceApp))",
-                channel: nil,
+                sentence: "",
+                channel: sourceApp,
                 vaultPath: AppSettings.shared.vaultPath
             )
             let settings = AppSettings.shared
