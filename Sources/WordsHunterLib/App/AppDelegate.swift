@@ -98,6 +98,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         switch result {
         case .created(let path):
             showBubble(for: captured.word)
+            SightingsFile.recordSighting(
+                word: captured.lemma,
+                sentence: "(captured from \(sourceApp))",
+                channel: nil,
+                vaultPath: AppSettings.shared.vaultPath
+            )
             let settings = AppSettings.shared
             if settings.lookupEnabled && !settings.mwApiKey.isEmpty {
                 DictionaryService.shared.startLookup(word: captured.lemma, at: path)

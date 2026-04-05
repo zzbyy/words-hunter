@@ -524,6 +524,106 @@ final class WordPageCreatorSeedTests: XCTestCase {
     }
 }
 
+// MARK: - SightingsFile Tests
+
+final class SightingsFileTests: XCTestCase {
+
+    private var tempVault: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempVault = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(
+            at: tempVault.appendingPathComponent(".wordshunter"),
+            withIntermediateDirectories: true
+        )
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempVault)
+        super.tearDown()
+    }
+
+    func testReadSightings_missingFile() {
+        let result = SightingsFile.read(vaultPath: tempVault.path)
+        XCTAssertNil(result, "Reading from a vault with no sightings.json should return nil")
+    }
+
+    func testReadSightings_roundTrip() throws {
+        let entry = SightingEntry(date: "2026-04-04", sentence: "Test sentence.", channel: "telegram")
+        let store = SightingsStore(version: 1, days: [
+            "2026-04-04": ["posit": [entry]]
+        ])
+        try SightingsFile.write(store, vaultPath: tempVault.path)
+
+        let loaded = SightingsFile.read(vaultPath: tempVault.path)
+        XCTAssertNotNil(loaded)
+        XCTAssertEqual(loaded?.version, 1)
+        XCTAssertEqual(loaded?.days["2026-04-04"]?["posit"]?.count, 1)
+        XCTAssertEqual(loaded?.days["2026-04-04"]?["posit"]?.first?.sentence, "Test sentence.")
+        XCTAssertEqual(loaded?.days["2026-04-04"]?["posit"]?.first?.channel, "telegram")
+    }
+
+    func testRecordSighting_createsFile() {
+        let fileURL = SightingsFile.url(vaultPath: tempVault.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+
+        SightingsFile.recordSighting(
+            word: "deliberate", sentence: "She was deliberate.",
+            channel: nil, vaultPath: tempVault.path
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        let store = SightingsFile.read(vaultPath: tempVault.path)
+        XCTAssertNotNil(store)
+        XCTAssertEqual(store?.version, 1)
+    }
+
+    func testRecordSighting_appendsToExistingDay() {
+        SightingsFile.recordSighting(
+            word: "posit", sentence: "First.", channel: nil, vaultPath: tempVault.path
+        )
+        SightingsFile.recordSighting(
+            word: "posit", sentence: "Second.", channel: nil, vaultPath: tempVault.path
+        )
+
+        let store = SightingsFile.read(vaultPath: tempVault.path)
+        let today = SightingsFile.todayString()
+        let entries = store?.days[today]?["posit"]
+        XCTAssertEqual(entries?.count, 2)
+        XCTAssertEqual(entries?[0].sentence, "First.")
+        XCTAssertEqual(entries?[1].sentence, "Second.")
+    }
+
+    func testRecordSighting_nilChannel() throws {
+        let entry = SightingEntry(date: "2026-04-04", sentence: "Test sentence.", channel: nil)
+        let store = SightingsStore(version: 1, days: [
+            "2026-04-04": ["test": [entry]]
+        ])
+        try SightingsFile.write(store, vaultPath: tempVault.path)
+
+        let fileURL = SightingsFile.url(vaultPath: tempVault.path)
+        let content = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertFalse(content.contains("\"channel\""), "channel key must be omitted when nil")
+    }
+
+    func testRecordSighting_multipleWords() {
+        SightingsFile.recordSighting(
+            word: "posit", sentence: "Posit sentence.", channel: nil, vaultPath: tempVault.path
+        )
+        SightingsFile.recordSighting(
+            word: "deliberate", sentence: "Deliberate sentence.", channel: nil, vaultPath: tempVault.path
+        )
+
+        let store = SightingsFile.read(vaultPath: tempVault.path)
+        let today = SightingsFile.todayString()
+        XCTAssertNotNil(store?.days[today]?["posit"])
+        XCTAssertNotNil(store?.days[today]?["deliberate"])
+        XCTAssertEqual(store?.days[today]?.count, 2)
+    }
+}
+
 // MARK: - WordPageUpdater Tests
 
 final class WordPageUpdaterTests: XCTestCase {

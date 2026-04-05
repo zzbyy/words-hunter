@@ -98,7 +98,7 @@ removes sections it did not write.
 - `### Best Sentences` — append-only. Never modify or remove existing entries.
 - `### History` — append-only. One line per session. Never modify existing entries.
 - `## Graduation` — written once. Never overwritten.
-- `## Sightings` — append-only. Each sighting is one line. Written by `record_sighting`.
+- `## Sightings` — legacy section in word pages. New sightings are written to `sightings.json` (see § 6).
 
 ---
 
@@ -250,20 +250,65 @@ When `failures` is empty, omit the Failures line.
 
 ---
 
-## 6. Sightings Format
+## 6. Sightings Format (`sightings.json`)
 
-Appended to the `## Sightings` section of the word page by `record_sighting`.
+**Location:** `{vault_root}/.wordshunter/sightings.json`
+**Lock file:** `{vault_root}/.wordshunter/.sightings.lock` (mkdir-based directory lock)
 
-```markdown
-## Sightings
-- 2026-03-29 — *(context sentence where you saw the word)*
-- 2026-03-30 — "I posited that the project would ship on time." *(Telegram — work chat)*
+Centralized store for all word sightings. Written by the macOS app (Swift), the Windows
+app (Rust/Tauri), and the OpenClaw TypeScript plugin. Replaces the legacy per-word-page
+`## Sightings` markdown lines (existing lines are left as historical data, not updated).
+
+### Schema
+
+```json
+{
+  "version": 1,
+  "days": {
+    "2026-04-04": {
+      "deliberate": [
+        {
+          "date": "2026-04-04",
+          "sentence": "(captured from Safari)",
+          "channel": "telegram"
+        }
+      ],
+      "posit": [
+        {
+          "date": "2026-04-04",
+          "sentence": "I posited that the project would ship on time."
+        }
+      ]
+    }
+  }
+}
 ```
 
-Format per sighting line:
-```
-- {YYYY-MM-DD} — "{exact sentence or excerpt}" *({source channel})*
-```
+### Field definitions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | `number` | Schema version. Currently `1`. |
+| `days` | `Record<string, Record<string, SightingEntry[]>>` | Outer key: YYYY-MM-DD date. Inner key: lowercase word. |
+| `date` | `string` | YYYY-MM-DD when the sighting was recorded. |
+| `sentence` | `string` | Context sentence or placeholder (e.g. `"(captured from Safari)"`). |
+| `channel` | `string?` | Source channel (e.g. `"telegram"`). Omitted from JSON when absent. |
+
+### Write protocol
+
+1. **Lock** — `mkdir .wordshunter/.sightings.lock` (POSIX atomic; fails if already held)
+2. **Read** — parse `sightings.json` (or create empty store if missing)
+3. **Modify** — append new entry under `days[date][word]`
+4. **Write** — atomic temp+rename with sorted keys and pretty-printed JSON
+5. **Unlock** — `rmdir .wordshunter/.sightings.lock`
+
+Stale lock detection: if the lock directory's mtime is older than 10 seconds, remove and retry.
+
+### Cross-platform consistency
+
+- Swift uses `JSONEncoder` with `.sortedKeys` + `.prettyPrinted`
+- Rust uses `BTreeMap` (inherently sorted) + `serde_json::to_string_pretty`
+- TypeScript plugin uses `proper-lockfile` (also mkdir-based) for compatible locking
 
 ---
 

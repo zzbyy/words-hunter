@@ -6,6 +6,7 @@ pub mod dictionary;
 pub mod bubble;
 pub mod audio;
 pub mod config;
+pub mod sightings;
 
 use std::sync::Mutex;
 use tauri::{AppHandle, Listener, Manager};
@@ -172,7 +173,12 @@ async fn capture_and_process_word(app: AppHandle) {
 
     // Create vault file
     match vault::create_word_page(&vault_path, &template_path, &word, &lemma, vars) {
-        Ok(_) => info!("Word page created: {}", word),
+        Ok(_) => {
+            info!("Word page created: {}", word);
+            if let Err(e) = sightings::record_sighting(&vault_path, &lemma, &format!("(captured from clipboard)"), None) {
+                warn!("Failed to record sighting: {:?}", e);
+            }
+        }
         Err(e) => {
             error!("Failed to create word page: {:?}", e);
             return;
