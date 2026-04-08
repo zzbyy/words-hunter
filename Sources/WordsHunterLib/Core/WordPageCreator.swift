@@ -135,6 +135,7 @@ struct WordPageCreator {
     /// - No file exists → create with new Oxford template
     /// - Old MW-era template (has {{syllables}}) → replace with new Oxford template
     /// - Old pre-variable template (no lookup vars at all) → replace with new Oxford template
+    /// - Template with deprecated Sightings section → replace
     /// - Current Oxford-era template (has any new variable) → leave untouched
     static func seedTemplateIfNeeded(vaultPath: String) {
         guard !vaultPath.isEmpty else { return }
@@ -159,6 +160,11 @@ struct WordPageCreator {
                 }
                 // Cambridge-era template missing new variables → upgrade
                 if hasCambridgeVar && !existing.contains("{{when-to-use}}") {
+                    try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
+                    return
+                }
+                // Template still has deprecated Sightings section → upgrade
+                if existing.contains("## Sightings") {
                     try? defaultTemplate.write(to: templateURL, atomically: true, encoding: .utf8)
                     return
                 }
