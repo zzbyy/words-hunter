@@ -32,6 +32,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Migrate template.md if it predates the variable system
         WordPageCreator.seedTemplateIfNeeded(vaultPath: AppSettings.shared.vaultPath)
 
+        // Rebuild word index on launch (catches up with plugin-side changes)
+        WordIndex.regenerate()
+
         if AppSettings.shared.isSetupComplete {
             startMonitoringWhenTrusted()
         } else {
@@ -104,6 +107,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 channel: sourceApp,
                 vaultPath: AppSettings.shared.vaultPath
             )
+            WordIndex.regenerate()
             let settings = AppSettings.shared
             if settings.lookupEnabled && !settings.mwApiKey.isEmpty {
                 DictionaryService.shared.startLookup(word: captured.lemma, at: path)
