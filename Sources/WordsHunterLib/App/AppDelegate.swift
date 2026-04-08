@@ -35,7 +35,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Rebuild word index on launch (catches up with plugin-side changes)
         WordIndex.regenerate()
 
-        if AppSettings.shared.isSetupComplete {
+        let vaultExists = !AppSettings.shared.vaultPath.isEmpty
+            && FileManager.default.fileExists(atPath: AppSettings.shared.vaultPath)
+        if AppSettings.shared.isSetupComplete && vaultExists {
             startMonitoringWhenTrusted()
         } else {
             showSetupWindow()
