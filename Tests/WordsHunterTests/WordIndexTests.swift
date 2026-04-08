@@ -27,7 +27,8 @@ final class WordIndexTests: XCTestCase {
     }
 
     private func readIndex() -> String? {
-        try? String(contentsOf: wordsDir.appendingPathComponent("index.md"), encoding: .utf8)
+        // __index__.md is now at vault root (tmpDir), not inside Words/
+        try? String(contentsOf: tmpDir.appendingPathComponent("__index__.md"), encoding: .utf8)
     }
 
     private func writeMastery(_ words: [String: WordIndex.MasteryEntry]) {
@@ -62,10 +63,11 @@ final class WordIndexTests: XCTestCase {
         regenerate()
         let content = readIndex()
         XCTAssertNotNil(content)
-        XCTAssertTrue(content!.contains("0 words"))
-        XCTAssertFalse(content!.contains("## Mastered"))
-        XCTAssertFalse(content!.contains("## Reviewing"))
-        XCTAssertFalse(content!.contains("## Learning"))
+        XCTAssertTrue(content!.contains("**0** words"))
+        XCTAssertTrue(content!.contains("Vocabulary Dashboard"))
+        XCTAssertFalse(content!.contains("## ✅ Mastered"))
+        XCTAssertFalse(content!.contains("## 🔄 Reviewing"))
+        XCTAssertFalse(content!.contains("## 🌱 Learning"))
     }
 
     func testGroupsByStatus() {
@@ -81,15 +83,15 @@ final class WordIndexTests: XCTestCase {
         regenerate()
         let content = readIndex()!
 
-        XCTAssertTrue(content.contains("3 words"))
-        XCTAssertTrue(content.contains("1 mastered"))
-        XCTAssertTrue(content.contains("1 reviewing"))
-        XCTAssertTrue(content.contains("1 learning"))
-        XCTAssertTrue(content.contains("## Mastered (1)"))
+        XCTAssertTrue(content.contains("**3** words"))
+        XCTAssertTrue(content.contains("**1** mastered"))
+        XCTAssertTrue(content.contains("**1** reviewing"))
+        XCTAssertTrue(content.contains("**1** learning"))
+        XCTAssertTrue(content.contains("## ✅ Mastered (1)"))
         XCTAssertTrue(content.contains("[[posit]]"))
-        XCTAssertTrue(content.contains("## Reviewing (1)"))
+        XCTAssertTrue(content.contains("## 🔄 Reviewing (1)"))
         XCTAssertTrue(content.contains("[[ephemeral]]"))
-        XCTAssertTrue(content.contains("## Learning (1)"))
+        XCTAssertTrue(content.contains("## 🌱 Learning (1)"))
         XCTAssertTrue(content.contains("[[liminal]]"))
     }
 
@@ -99,12 +101,11 @@ final class WordIndexTests: XCTestCase {
             "deleted": .init(word: "deleted", box: 2, status: "learning", next_review: "2026-04-01"),
         ])
         writeWordPage("posit")
-        // 'deleted' has no .md page
 
         regenerate()
         let content = readIndex()!
 
-        XCTAssertTrue(content.contains("1 words"))
+        XCTAssertTrue(content.contains("**1** words"))
         XCTAssertTrue(content.contains("[[posit]]"))
         XCTAssertFalse(content.contains("[[deleted]]"))
     }
@@ -117,26 +118,28 @@ final class WordIndexTests: XCTestCase {
         regenerate()
         let content = readIndex()!
 
-        XCTAssertTrue(content.contains("2 words"))
-        XCTAssertTrue(content.contains("2 learning"))
+        XCTAssertTrue(content.contains("**2** words"))
+        XCTAssertTrue(content.contains("**2** learning"))
         XCTAssertTrue(content.contains("[[orphan]]"))
         XCTAssertTrue(content.contains("[[untracked]]"))
     }
 
-    func testIndexMdNotCountedAsWord() {
+    func testIndexWrittenToVaultRoot() {
         writeMastery([:])
         writeWordPage("posit")
-        try? "> old index".write(
-            to: wordsDir.appendingPathComponent("index.md"),
-            atomically: true,
-            encoding: .utf8
-        )
 
         regenerate()
-        let content = readIndex()!
 
-        XCTAssertTrue(content.contains("1 words"))
-        XCTAssertTrue(content.contains("[[posit]]"))
-        XCTAssertFalse(content.contains("[[index]]"))
+        // Should exist at vault root
+        let content = readIndex()
+        XCTAssertNotNil(content)
+        XCTAssertTrue(content!.contains("[[posit]]"))
+
+        // Should NOT exist in words folder
+        let wordsIndex = try? String(
+            contentsOf: wordsDir.appendingPathComponent("__index__.md"),
+            encoding: .utf8
+        )
+        XCTAssertNil(wordsIndex)
     }
 }
