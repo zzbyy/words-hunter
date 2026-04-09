@@ -28,7 +28,7 @@ enum VaultScanner {
         for file in files {
             guard file.pathExtension == "md" else { continue }
             let lemma = file.deletingPathExtension().lastPathComponent.lowercased()
-            guard !lemma.isEmpty, lemma != excludedLemma else { continue }
+            guard !lemma.isEmpty, lemma != excludedLemma, lemma != "index" else { continue }
 
             // Whole-word match: \b{lemma}\b, case-insensitive
             guard let regex = try? NSRegularExpression(

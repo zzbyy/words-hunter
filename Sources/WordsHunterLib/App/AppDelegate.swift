@@ -32,7 +32,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Migrate template.md if it predates the variable system
         WordPageCreator.seedTemplateIfNeeded(vaultPath: AppSettings.shared.vaultPath)
 
-        if AppSettings.shared.isSetupComplete {
+        // Rebuild word index on launch (catches up with plugin-side changes)
+        WordIndex.regenerate()
+
+        let vaultExists = !AppSettings.shared.vaultPath.isEmpty
+            && FileManager.default.fileExists(atPath: AppSettings.shared.vaultPath)
+        if AppSettings.shared.isSetupComplete && vaultExists {
             startMonitoringWhenTrusted()
         } else {
             showSetupWindow()
@@ -98,6 +103,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         switch result {
         case .created(let path):
             showBubble(for: captured.word)
+            SightingsFile.recordSighting(
+                word: captured.lemma,
+                sentence: "",
+                channel: sourceApp,
+                vaultPath: AppSettings.shared.vaultPath
+            )
+            WordIndex.regenerate()
             let settings = AppSettings.shared
             if settings.lookupEnabled && !settings.mwApiKey.isEmpty {
                 DictionaryService.shared.startLookup(word: captured.lemma, at: path)

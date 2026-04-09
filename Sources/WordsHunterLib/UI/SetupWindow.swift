@@ -93,12 +93,6 @@ final class SetupViewController: NSViewController {
         return b
     }()
 
-    private lazy var editTemplateBtn: NSButton = {
-        let b = NSButton(title: "Edit Word Template…", target: self, action: #selector(editTemplate))
-        b.bezelStyle = .rounded
-        return b
-    }()
-
     private let statusLabel: NSTextField = {
         let f = NSTextField(labelWithString:
             "Requires Accessibility permission to detect Option+double-click.")
@@ -243,7 +237,7 @@ final class SetupViewController: NSViewController {
                   dirHeader, pathRow, useWordFolderToggle, folderRow,
                   lookupHeader, lookupNote, lookupEnabledToggle, mwSection, researchNote,
                   divider,
-                  editTemplateBtn, statusLabel, startBtn] {
+                  statusLabel, startBtn] {
             outerStack.addArrangedSubview(v)
         }
 
@@ -255,7 +249,6 @@ final class SetupViewController: NSViewController {
         outerStack.setCustomSpacing(12, after: mwSection)
         outerStack.setCustomSpacing(20, after: researchNote)
         outerStack.setCustomSpacing(16, after: divider)
-        outerStack.setCustomSpacing(6,  after: editTemplateBtn)
 
         view.addSubview(outerStack)
         NSLayoutConstraint.activate([
@@ -330,16 +323,6 @@ final class SetupViewController: NSViewController {
 
     @objc private func openApiKeyLink() {
         NSWorkspace.shared.open(URL(string: "https://dictionaryapi.com/register/index.htm")!)
-    }
-
-    @objc private func editTemplate() {
-        let vaultPath = vaultPathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !vaultPath.isEmpty else { showAlert("Set your words directory first."); return }
-        WordPageCreator.seedTemplateIfNeeded(vaultPath: vaultPath)
-        let templateURL = URL(fileURLWithPath: vaultPath)
-            .appendingPathComponent(".wordshunter")
-            .appendingPathComponent("template.md")
-        NSWorkspace.shared.open(templateURL)
     }
 
     @objc private func startHunting() {

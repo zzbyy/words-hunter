@@ -164,11 +164,11 @@ See CEO plan: `~/.gstack/projects/zzbyy-words-hunter/ceo-plans/2026-03-29-agent-
 
 ---
 
-### Sighting hook — serial O(N) file writes
-**What:** When the user sends a message containing 10 captured words, the sighting hook fires 10 sequential read-modify-write cycles on 10 different `.md` files. Each is individually safe, but under heavy load (user pastes a paragraph with many vocabulary words) this creates a write storm on the vault.
+### Sighting hook — serial O(N) writes
+**What:** When the user sends a message containing 10 captured words, the sighting hook fires 10 sequential read-modify-write cycles on `sightings.json`. Each is individually safe, but under heavy load (user pastes a paragraph with many vocabulary words) this creates a write storm.
 **Why:** Sequential writes are predictable and correct but slow for batch scenarios. A short debounce or batch queue would coalesce writes within a single message into one pass.
 **Cons:** Adds batching complexity. Low priority because most messages contain 0-1 matching words.
-**Context:** Found in adversarial review (v1.7.0.0). Not a correctness bug, purely a performance concern.
+**Context:** Found in adversarial review (v1.7.0.0). Not a correctness bug, purely a performance concern. Sightings now use centralized `sightings.json` (v2 event-based schema) instead of per-word `.md` files.
 **Effort:** XS (human) → XS (CC+gstack)
 **Priority:** P2
 
@@ -193,7 +193,7 @@ See CEO plan: `~/.gstack/projects/zzbyy-words-hunter/ceo-plans/2026-03-29-agent-
 ---
 
 ### README — privacy note for sighting hook
-**What:** README must include a privacy section explaining: the sighting hook scans your own outgoing messages locally; only the matched word + timestamp is stored in the `.md` file; nothing is sent to external servers.
+**What:** README must include a privacy section explaining: the sighting hook scans your own outgoing messages locally; only the matched word + timestamp + sentence is stored in `.wordshunter/sightings.json`; nothing is sent to external servers.
 **Why:** The hook reads every outgoing message across all connected channels. Users deserve to know this up front.
 **Effort:** XS (human) → XS (CC+gstack)
 **Priority:** P2 (write before ClawHub publish)

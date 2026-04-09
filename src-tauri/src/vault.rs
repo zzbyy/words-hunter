@@ -72,18 +72,49 @@ fn vault_path_to_file_path(vault_path: &str, word: &str) -> PathBuf {
     PathBuf::from(vault_path).join(format!("{}.md", safe_name))
 }
 
-/// Load the template file
+/// Default template — mirrors macOS WordPageCreator.defaultTemplate.
+/// Used when `.wordshunter/template.md` is missing or empty.
+pub const DEFAULT_TEMPLATE: &str = "\
+# {{word}}
+
+**Pronunciation:** 🇬🇧 {{pronunciation-bre}} · 🇺🇸 {{pronunciation-ame}} · **Level:** {{cefr}}
+
+## Definitions
+{{meanings}}
+
+## Corpus Examples
+{{corpus-examples}}
+
+---
+
+## When to Use
+{{when-to-use}}
+---
+
+## Word Family
+{{word-family}}
+
+---
+
+## See Also
+{{see-also}}
+
+---
+
+## Memory Tip
+*(optional: etymology, mnemonic, personal association — anything that helps you remember)*";
+
+/// Load the template file, falling back to the built-in default.
 pub fn load_template(template_path: &str) -> Result<String, VaultError> {
     let path = Path::new(template_path);
-    if !path.exists() {
-        // Try default template
-        let default = PathBuf::from(template_path);
-        if default.exists() {
-            return fs::read_to_string(&default).map_err(VaultError::Io);
+    if path.exists() {
+        let content = fs::read_to_string(path).map_err(VaultError::Io)?;
+        if !content.trim().is_empty() {
+            return Ok(content);
         }
-        return Err(VaultError::TemplateNotFound(template_path.to_string()));
     }
-    fs::read_to_string(path).map_err(VaultError::Io)
+    debug!("Template not found at {:?}, using built-in default", template_path);
+    Ok(DEFAULT_TEMPLATE.to_string())
 }
 
 /// Interpolate template variables: {{word}} -> value
