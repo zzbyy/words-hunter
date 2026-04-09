@@ -162,11 +162,6 @@
       <input type="text" id="vaultPath" placeholder="~/.wordshunter/vault">
     </div>
 
-    <div class="field">
-      <label>Template File</label>
-      <input type="text" id="templatePath" placeholder="~/.wordshunter/template.md">
-    </div>
-
     <div class="toggle">
       <div>
         <div class="toggle-label">Sound</div>
@@ -200,12 +195,14 @@
     const { invoke } = window.__TAURI__.core;
     const { open } = window.__TAURI__.dialog;
 
+    let currentTemplatePath = '';
+
     async function loadConfig() {
       try {
         const cfg = await invoke('get_config');
         if (cfg) {
           document.getElementById('vaultPath').value = cfg.vault_path || '';
-          document.getElementById('templatePath').value = cfg.template_path || '';
+          currentTemplatePath = cfg.template_path || '';
           document.getElementById('soundEnabled').checked = cfg.sound_enabled !== false;
           document.getElementById('bubbleEnabled').checked = cfg.bubble_enabled !== false;
         }
@@ -218,7 +215,7 @@
         await invoke('save_config', {
           newConfig: {
             vault_path: document.getElementById('vaultPath').value,
-            template_path: document.getElementById('templatePath').value,
+            template_path: currentTemplatePath,
             hotkey: 'Alt+double-click',
             sound_enabled: document.getElementById('soundEnabled').checked,
             bubble_enabled: document.getElementById('bubbleEnabled').checked

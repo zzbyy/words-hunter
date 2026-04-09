@@ -83,7 +83,7 @@ Format: [version] - YYYY-MM-DD
 
 - **`create_word` tool** — agent can add a word page directly from chat; also powers the new `/hunt <word>` slash command
 - **`/hunt <word>` slash command** — send `/hunt ephemeral` in any connected channel to instantly capture a word without the macOS app
-- **User-editable word page template** — `.wordshunter/template.md` is seeded on first settings save and opened via **Edit Word Template…** in Preferences. Use `{{word}}` and `{{date}}` placeholders. Both the macOS app and OpenClaw plugin read this file; delete it to reset to the built-in default. No rebuild needed when you change it.
+- **User-editable word page template** — `.wordshunter/template.md` is seeded on first settings save. Use `{{word}}` and `{{date}}` placeholders. Both the macOS app and OpenClaw plugin read this file; delete it to reset to the built-in default. No rebuild needed when you change it.
 
 ### Changed
 
@@ -109,7 +109,7 @@ Format: [version] - YYYY-MM-DD
   - `load_word` — loads a word page and its mastery state
   - `record_mastery` — records a practice session, advances Leitner SRS schedule, writes history, regenerates callout
   - `update_page` — writes agent-generated content (best sentences, graduation) back to word pages
-  - `record_sighting` — appends in-the-wild sightings to word pages
+  - `record_sighting` — appends in-the-wild sightings to `sightings.json`
   - `vault_summary` — aggregates vault stats for on-demand summaries and weekly recaps
 - **Leitner SRS scheduler** (`src/srs/scheduler.ts`) — 5-box system (1d/3d/7d/14d/30d intervals), 85-point mastery threshold
 - **File watcher** (`src/watcher.ts`) — chokidar-based watcher enqueues 24h capture nudges to `.wordshunter/pending-nudges.json`; restarts with exponential backoff on crash

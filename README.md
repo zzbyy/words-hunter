@@ -58,12 +58,12 @@ Word advances through Leitner SRS boxes until mastered
 - **One-gesture trigger** — Option(⌥)+double-click on macOS, Alt+double-click on Windows.
 - **Instant feedback** — a small animated bubble appears near your cursor and a soft sound plays. Gone in under 2 seconds.
 - **Smart deduplication** — if the word page already exists, capture is silently skipped. No duplicates.
-- **Structured template** — each word page includes sections for Sightings, Meanings, When to Use, Word Family, See Also, and Memory Tip. You fill these in at your own pace.
+- **Structured template** — each word page includes sections for Definitions, Corpus Examples, When to Use, Word Family, See Also, and Memory Tip. You fill these in at your own pace.
 - **Dictionary lookup** — auto-fills definitions from the Merriam-Webster Dictionary API in the background. Requires a free API key; configure it in Settings → Dictionary Lookup.
 - **Spaced repetition (SRS)** — Leitner 5-box system via the OpenClaw plugin. Words in box 1 come back in 1 day; box 5 in 30 days.
 - **Conversational practice** — an AI agent introduces the word, asks you to use it in a sentence, gives feedback, and scores your best attempt.
 - **Mastery tracking** — scores, session history, and the next review date are written back to your word page as a `> [!mastery]` callout.
-- **Passive sighting detection** — when you use a captured word in any outgoing message, the sighting is logged silently to the word's page. No pop-ups, no interruptions.
+- **Passive sighting detection** — when you use a captured word in any outgoing message, the sighting is logged silently to `sightings.json`. No pop-ups, no interruptions.
 - **24h capture nudges** — a nudge fires 24 hours after capture reminding you to practice the word.
 - **Weekly recap** — a Sunday morning summary of your word stats, mastered words, and what's due.
 
@@ -91,6 +91,13 @@ Word advances through Leitner SRS boxes until mastered
 ---
 
 ## Installation
+
+### Download from releases
+
+Pre-built binaries are available on the [Releases](https://github.com/zzbyy/words-hunter/releases) page:
+
+- **macOS** — download `WordsHunter-macOS-{version}.zip`, unzip, and drag `Words Hunter.app` to `/Applications`.
+- **Windows** — download `WordsHunter-Windows-{version}-setup.exe` and run the installer.
 
 ### macOS — build from source
 
@@ -166,27 +173,25 @@ The installer will be at: `src-tauri/target/release/bundle/nsis/WordsHunter_x.x.
 3. Toggle **Enable dictionary lookup** and paste your API key.
 4. Capture any word — the definition appears in the `## Meanings` section within a few seconds.
 
-### Customising the word page template (optional)
+### OpenClaw mastery plugin (recommended)
 
-Click **Edit Word Template…** in Preferences to open `.wordshunter/template.md` in your default editor. Use `{{word}}` and `{{date}}` as placeholders. Changes take effect immediately — no rebuild needed. Delete the file to reset to the default template.
+Words Hunter captures words — but the real learning happens when you practice them. The [Words Hunter OpenClaw plugin](https://github.com/zzbyy/openclaw-words-hunter) connects your vocabulary to an AI agent that coaches you through spaced-repetition sessions directly in Telegram, WeChat, or any chat app you already use. Install it to experience the full capture-to-mastery flow.
 
-### OpenClaw mastery plugin (optional)
+**Prerequisites:** [OpenClaw](https://openclaw.dev) installed and configured with at least one channel connector.
 
-The mastery plugin connects Words Hunter to OpenClaw, an AI agent platform. **Source and install instructions:** [github.com/zzbyy/openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter).
-
-**Prerequisites:** [OpenClaw](https://openclaw.dev) installed and configured with at least one channel connector (Telegram, WeChat, Feishu, WhatsApp, etc.).
-
-**Quick install** (after the package is published to npm as `words-hunter-openclaw`):
+**Quick install:**
 
 ```bash
-openclaw plugins install words-hunter-openclaw
+curl -fsSL https://raw.githubusercontent.com/zzbyy/openclaw-words-hunter/main/install.sh | sh
 ```
+
+Or download the release tarball and run `openclaw plugins install /path/to/words-hunter-openclaw.tgz`.
 
 The plugin discovers your words directory via `.wordshunter/config.json`, which Words Hunter writes automatically each time you save settings.
 
-**Start a mastery session:** open any connected chat channel and send `/vocab`.
+**Start a mastery session:** open any connected chat channel and say "let's review words".
 
-**Capture a word from chat:** send `/hunt ephemeral` in any connected channel. The word page is created and filled with dictionary data — no desktop app needed.
+**Add a word from chat:** tell the agent "I want to learn the word 'precarious'" or use `add word <word>`. The word page is created and filled with Cambridge Dictionary data — no desktop app needed.
 
 ---
 
@@ -210,24 +215,13 @@ Each captured word creates a file like `posit.md`:
 ```markdown
 # posit
 
-**Syllables:** *(e.g. po·sit)* · **Pronunciation:** *(e.g. /ˈpɒz.ɪt/)*
+**Pronunciation:** 🇬🇧 /ˈpɒz.ɪt/ · 🇺🇸 /ˈpɑː.zɪt/ · **Level:** C2
 
-## Sightings
-- 2026-03-29 — *(context sentence where you saw the word)*
+## Definitions
+*(auto-filled by dictionary lookup)*
 
----
-
-## Meanings
-
-### 1. () *()*
-
-> *()*
-
-**My sentence:**
-- *(write your own sentence using this word)*
-
-**Patterns:**
-- *(common word combinations and grammar patterns)*
+## Corpus Examples
+*(auto-filled by dictionary lookup)*
 
 ---
 
@@ -240,33 +234,32 @@ Each captured word creates a file like `posit.md`:
 
 ## Word Family
 
-...
+*(list related forms, each with a short example)*
+
+---
 
 ## See Also
-...
+*(links to related words in your vault)*
+
+---
 
 ## Memory Tip
-...
+*(optional: etymology, mnemonic, personal association — anything that helps you remember)*
 ```
 
 Fill in the sections yourself, or let the AI agent help during a mastery session.
 
 ### Mastery sessions (OpenClaw)
 
-Send `/vocab` in any connected channel:
+Say "let's review words" or "daily vocab review" in any connected channel. The agent runs a three-part session:
 
-```
-You have 3 words to practice today: posit, acquire, allude.
-Let's start with posit.
+1. **Evaluation** — reviews words you used today (detected via passive sightings)
+2. **New words** — introduces recently captured words with Cambridge Dictionary definitions
+3. **Practice** — presents a due word's definition and asks you to write an original sentence
 
-posit (verb) — to put forward as fact or as a basis for argument.
-Register: formal. Common in academic writing and discourse.
-Last practiced: never. Box: 1 (new).
+Example: the agent shows the definition of "precarious" and you write *"The company's precarious financial situation forced the board to consider drastic measures."* Your sentence is scored across four dimensions — meaning, register, collocation, and grammar (0–100 each). Score 85+ to advance the word; below 85 sends it back for more practice.
 
-Use posit in a sentence — any context works.
-```
-
-The agent runs you through at least 3 exchanges, scores your best sentence on a 4-component rubric (meaning, register, collocation, grammar), and advances the word through the Leitner boxes:
+The system uses a 5-box Leitner schedule with expanding intervals:
 
 | Box | Interval | Status |
 |-----|----------|--------|
@@ -276,25 +269,13 @@ The agent runs you through at least 3 exchanges, scores your best sentence on a 
 | 4 | 14 days | Mastered |
 | 5 | 30 days | Mastered |
 
-Score ≥ 85 → box advances. Score < 85 → drops one box. Mastery threshold is intentionally high — you need to demonstrate real command, not just recall.
+When a word reaches box 4, you graduate it. The agent writes a `## Graduation` section to the page with a memorable sentence.
 
-When a word reaches box 4, you graduate it. The agent writes a `## Graduation` section to the page with a memorable sentence:
-
-```markdown
-## Graduation
-> On 2026-04-15 you mastered this word.
-> "The philosopher posited that consciousness arises from complexity itself."
-```
+See the [plugin README](https://github.com/zzbyy/openclaw-words-hunter) for the full session flow and configuration options.
 
 ### Passive sightings
 
-You don't have to do anything. When you type a captured word in any outgoing message, the sighting hook records it automatically:
-
-```markdown
-## Sightings
-- 2026-04-01 — "I posit that the test suite is too slow." *(Telegram — work chat)*
-- 2026-03-29 — *(context sentence where you saw the word)*
-```
+You don't have to do anything. When you type a captured word in any outgoing message, the sighting hook records it automatically to `.wordshunter/sightings.json` — a centralized, event-based store shared across both platforms and the OpenClaw plugin.
 
 Sightings don't affect your SRS score — they're a record of how you're using the word in the wild.
 
@@ -305,7 +286,7 @@ Sightings don't affect your SRS score — they're a record of how you're using t
 Words Hunter operates locally. No data is sent to external servers except:
 
 - **Merriam-Webster API** — the captured word is sent to fetch its definition, if lookup is enabled and a key is configured. No other data is sent.
-- **OpenClaw** — practice session messages travel through whatever channels you have connected. The sighting hook reads your *outgoing* messages locally and stores only the matched word + timestamp + sentence in your local `.md` file.
+- **OpenClaw** — practice session messages travel through whatever channels you have connected. The sighting hook reads your *outgoing* messages locally and stores only the matched word + timestamp + sentence in `.wordshunter/sightings.json`.
 
 Everything else — your word pages, mastery state, SRS schedule — lives in files on your machine.
 
@@ -339,7 +320,7 @@ Words Hunter is two independent systems connected by a single JSON file.
               │  record_mastery → mastery.json      │
               │                  + [!mastery] callout│
               │  update_page   → {word}.md          │
-              │  record_sighting → {word}.md        │
+              │  record_sighting → sightings.json   │
               │  vault_summary → mastery.json       │
               │                                     │
               │  watcher.ts    → pending-nudges.json│
@@ -421,17 +402,6 @@ If you change the mastery.json schema, callout format, or config.json structure,
 **New features:**
 
 Check `TODOS.md` for the backlog. P1 items are unblocking; P2 are quality-of-life; P3 are exploratory. Open an issue before starting anything that touches the schema or the SRS algorithm.
-
----
-
-## Roadmap
-
-See [TODOS.md](TODOS.md) for the full backlog. High-priority deferred items:
-
-- **mastery.json concurrent write protection** (P1) — guard against lost-update races when two sessions score the same word simultaneously
-- **AXUIElement / UIA sentence capture** (P3) — capture the full sentence around the word at capture time, auto-fill the Sightings section
-- **Collins Dictionary support** (P2) — second definition source, waiting for an official API
-- **Corpus-based collocations** (P3) — pull real word pairs from a corpus API
 
 ---
 
