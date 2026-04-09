@@ -131,5 +131,8 @@ enum WordIndex {
         let box: Int
         let status: String
         let next_review: String
+        var coaching_mode: String? = nil
+        var synonyms: [String]? = nil
+        var short_definition: String? = nil
     }
 }

@@ -124,7 +124,10 @@ The plugin reads and writes this file. The Obsidian callout is derived from it.
           "date": "2026-03-29",
           "score": 85
         }
-      ]
+      ],
+      "coaching_mode": "silent",
+      "synonyms": ["suggest", "propose"],
+      "short_definition": "to suggest something as a basic fact"
     }
   }
 }
@@ -145,6 +148,9 @@ The plugin reads and writes this file. The Obsidian callout is derived from it.
 | `sessions` | `number` | Total number of practice sessions. |
 | `failures` | `string[]` | Noted confusion patterns (filled by agent). |
 | `best_sentences` | `BestSentence[]` | Top sentences from sessions (append-only). |
+| `coaching_mode` | `string?` | `"silent"` or `"inline"`. Absent = coaching on (default). |
+| `synonyms` | `string[]?` | Up to 5 lowercase synonyms for nudge matching. |
+| `short_definition` | `string?` | First sense definition from Cambridge lookup. |
 
 ### Leitner box intervals
 
@@ -432,7 +438,9 @@ type ToolError =
   | { code: 'WRITE_FAILED';     message: string }
   | { code: 'ALREADY_EDITED';   message: string; word: string }
   | { code: 'VAULT_ESCAPE';     message: string; path: string }
-  | { code: 'NaN_SCORE';        message: string; field: string };
+  | { code: 'NaN_SCORE';        message: string; field: string }
+  | { code: 'INVALID_INPUT';    message: string; field: string }
+  | { code: 'INVALID_GRADUATION'; message: string; word: string };
 ```
 
 | Code | Trigger | Agent sees |
@@ -444,3 +452,5 @@ type ToolError =
 | `ALREADY_EDITED` | Page modified between read and write | "Page was modified externally — skipped to avoid overwrite." |
 | `VAULT_ESCAPE` | Resolved path is outside vault root | "Invalid vault path detected. Please reconfigure Words Hunter." |
 | `NaN_SCORE` | LLM returns malformed/missing score fields | "Couldn't score that — try again?" |
+| `INVALID_INPUT` | Validation failed on a tool input field | "Invalid input — check the '{field}' parameter." |
+| `INVALID_GRADUATION` | Graduation sentence empty, missing word, or >200 chars | "Graduation sentence invalid — must include the word and be under 200 characters." |

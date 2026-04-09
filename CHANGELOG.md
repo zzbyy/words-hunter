@@ -11,6 +11,8 @@ Format: [version] - YYYY-MM-DD
 ### Changed
 
 - **OpenClaw plugin** — moved to standalone repository [openclaw-words-hunter](https://github.com/zzbyy/openclaw-words-hunter). The `openclaw-plugin/` directory is removed from this repo; install/update instructions are in the plugin README.
+- **SCHEMA.md** — document `coaching_mode`, `synonyms`, `short_definition` fields on WordEntry; add `INVALID_INPUT` and `INVALID_GRADUATION` error codes (synced with plugin v1.2.0)
+- **WordIndex.swift** — add optional `coaching_mode`, `synonyms`, `short_definition` to `MasteryEntry` for schema parity
 
 ---
 
