@@ -2,6 +2,7 @@
 //! Creates a borderless, always-on-top window at cursor position.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::info;
 
@@ -72,18 +73,38 @@ pub fn show_setup_window(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+pub enum BubbleStatus {
+    Success,
+    Captured,
+}
+
+static BUBBLE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Show the bubble notification window at the cursor position
 pub fn show_bubble(app: &AppHandle, word: &str) -> Result<(), String> {
+    show_bubble_with_status(app, word, BubbleStatus::Success)
+}
+
+pub fn show_bubble_captured(app: &AppHandle, word: &str) -> Result<(), String> {
+    show_bubble_with_status(app, word, BubbleStatus::Captured)
+}
+
+fn show_bubble_with_status(app: &AppHandle, word: &str, status: BubbleStatus) -> Result<(), String> {
     #[cfg(windows)]
     let (x, y) = get_cursor_position();
 
     #[cfg(not(windows))]
     let (x, y) = (100, 100);
 
-    let window_label = format!("bubble-{}", std::process::id());
+    let id = BUBBLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let window_label = format!("bubble-{}", id);
 
-    if let Some(old) = app.get_webview_window(&window_label) {
-        let _ = old.close();
+    // Close any previous bubble window
+    if id > 0 {
+        let prev_label = format!("bubble-{}", id - 1);
+        if let Some(old) = app.get_webview_window(&prev_label) {
+            let _ = old.close();
+        }
     }
 
     let window = WebviewWindowBuilder::new(
@@ -105,6 +126,11 @@ pub fn show_bubble(app: &AppHandle, word: &str) -> Result<(), String> {
     let word_clone = word.to_string();
     let app_clone = app.clone();
     let label_clone = window_label.clone();
+    let event_name = match status {
+        BubbleStatus::Success => "show-bubble",
+        BubbleStatus::Captured => "show-bubble-captured",
+    };
+    let event_name = event_name.to_string();
     window.once("tauri://created", move |_| {
         let app = app_clone;
         let w = word_clone;
@@ -112,7 +138,7 @@ pub fn show_bubble(app: &AppHandle, word: &str) -> Result<(), String> {
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(100));
             if let Some(win) = app.get_webview_window(&label) {
-                let _ = win.emit("show-bubble", &w);
+                let _ = win.emit(&event_name, &w);
             }
         });
     });
@@ -120,7 +146,7 @@ pub fn show_bubble(app: &AppHandle, word: &str) -> Result<(), String> {
     let dismiss_label = window_label.clone();
     let app_dismiss = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(3));
         if let Some(w) = app_dismiss.get_webview_window(&dismiss_label) {
             let _ = w.close();
         }

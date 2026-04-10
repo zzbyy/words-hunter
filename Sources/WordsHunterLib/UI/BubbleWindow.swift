@@ -1,16 +1,25 @@
 import AppKit
 import QuartzCore
 
-final class BubbleWindow: NSPanel {
+enum BubbleStatus {
+    case success
+    case captured
+}
 
-    init(word: String, near point: CGPoint) {
+final class BubbleWindow: NSPanel {
+    private let status: BubbleStatus
+
+    init(word: String, near point: CGPoint, status: BubbleStatus = .success) {
+        self.status = status
         let font = NSFont.systemFont(ofSize: 16, weight: .bold)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
         let textSize = (word as NSString).size(withAttributes: attrs)
-        
+
         let hPad: CGFloat = 20
         let vPad: CGFloat = 10
-        let bubbleW = textSize.width + hPad * 2
+        let iconWidth: CGFloat = 16
+        let iconGap: CGFloat = 6
+        let bubbleW = hPad + iconWidth + iconGap + textSize.width + hPad
         let bubbleH = textSize.height + vPad * 2
 
         // Add a margin for the shadow to prevent clipping and rectangular artifacts
@@ -41,7 +50,8 @@ final class BubbleWindow: NSPanel {
         let bubble = BubbleView(
             frame: NSRect(origin: .zero, size: frame.size),
             bubbleSize: CGSize(width: bubbleW, height: bubbleH),
-            word: word
+            word: word,
+            status: status
         )
         contentView = bubble
     }
@@ -57,7 +67,7 @@ final class BubbleWindow: NSPanel {
         }
 
         layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        layer.frame = contentView?.bounds ?? .zero 
+        layer.frame = contentView?.bounds ?? .zero
 
         let duration: TimeInterval = 0.35
         let timing = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1)
@@ -69,7 +79,7 @@ final class BubbleWindow: NSPanel {
         scale.timingFunction = timing
 
         let move = CABasicAnimation(keyPath: "transform.translation.y")
-        move.fromValue = -20 
+        move.fromValue = -20
         move.toValue = 0
         move.duration = duration
         move.timingFunction = timing
@@ -84,20 +94,24 @@ final class BubbleWindow: NSPanel {
         group.duration = duration
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false
-        
+
         layer.add(group, forKey: "entrance")
         self.alphaValue = 1.0
 
-        if let sound = NSSound(named: "Pop") ?? NSSound(named: "Tink") {
-            sound.play()
+        if status == .success {
+            if let sound = NSSound(named: "Pop") ?? NSSound(named: "Tink") {
+                sound.play()
+            }
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        } else {
+            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         }
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
 
         scheduleHide()
     }
 
     private func scheduleHide() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let layer = self?.contentView?.layer else {
                 self?.orderOut(nil)
                 return
@@ -106,15 +120,15 @@ final class BubbleWindow: NSPanel {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                
+
                 let exitScale = CABasicAnimation(keyPath: "transform.scale")
                 exitScale.toValue = 0.8
                 let exitMove = CABasicAnimation(keyPath: "transform.translation.y")
                 exitMove.toValue = 10
-                
+
                 layer.add(exitScale, forKey: "exitScale")
                 layer.add(exitMove, forKey: "exitMove")
-                
+
                 self?.animator().alphaValue = 0
             } completionHandler: {
                 self?.orderOut(nil)
@@ -126,10 +140,15 @@ final class BubbleWindow: NSPanel {
 private final class BubbleView: NSView {
     private let word: String
     private let bubbleSize: CGSize
+    private let status: BubbleStatus
 
-    init(frame: NSRect, bubbleSize: CGSize, word: String) {
+    private let iconWidth: CGFloat = 16
+    private let iconGap: CGFloat = 6
+
+    init(frame: NSRect, bubbleSize: CGSize, word: String, status: BubbleStatus) {
         self.word = word
         self.bubbleSize = bubbleSize
+        self.status = status
         super.init(frame: frame)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -146,7 +165,10 @@ private final class BubbleView: NSView {
 
         // Setup shadow once (prevents rectangular artifact)
         layer?.shadowPath = CGPath(roundedRect: pillRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-        layer?.shadowColor = NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 0.25).cgColor
+        let shadowColor = status == .captured
+            ? NSColor(red: 0.35, green: 0.35, blue: 0.35, alpha: 0.15)
+            : NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 0.25)
+        layer?.shadowColor = shadowColor.cgColor
         layer?.shadowOffset = .zero
         layer?.shadowRadius = 15
         layer?.shadowOpacity = 1
@@ -168,36 +190,84 @@ private final class BubbleView: NSView {
         // 1. Draw Gradient Background
         NSGraphicsContext.current?.saveGraphicsState()
         path.addClip()
-        let gradient = NSGradient(
-            colors: [
+        let gradient: NSGradient?
+        if status == .captured {
+            gradient = NSGradient(colors: [
+                NSColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 0.98),
+                NSColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 0.98)
+            ])
+        } else {
+            gradient = NSGradient(colors: [
                 NSColor(red: 0.05, green: 0.05, blue: 0.09, alpha: 0.98),
                 NSColor(red: 0.08, green: 0.08, blue: 0.15, alpha: 0.98)
-            ]
-        )
+            ])
+        }
         gradient?.draw(in: pillRect, angle: 90)
         NSGraphicsContext.current?.restoreGraphicsState()
 
         // 2. Draw Border
-        NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 0.3).setStroke()
+        let borderColor: NSColor = status == .captured
+            ? NSColor(red: 0.35, green: 0.35, blue: 0.35, alpha: 0.3)
+            : NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 0.3)
+        borderColor.setStroke()
         let border = NSBezierPath(roundedRect: pillRect.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
         border.lineWidth = 1
         border.stroke()
 
-        // 3. Draw Text
+        // 3. Draw icon + word together
         let font = NSFont.systemFont(ofSize: 16, weight: .bold)
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
 
+        let textColor: NSColor = status == .captured
+            ? NSColor(white: 0.55, alpha: 1)
+            : .white
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor.white,
+            .foregroundColor: textColor,
             .paragraphStyle: paragraphStyle,
             .kern: 0.2
         ]
 
         let textSize = (word as NSString).size(withAttributes: attrs)
+        let contentWidth = iconWidth + iconGap + textSize.width
+        let contentX = pillRect.origin.x + (pillRect.width - contentWidth) / 2
+        let centerY = pillRect.midY
+
+        // Draw indicator icon
+        let iconCenterX = contentX + iconWidth / 2
+        if status == .success {
+            // Checkmark (✓)
+            let check = NSBezierPath()
+            check.move(to: NSPoint(x: iconCenterX - 5, y: centerY + 1))
+            check.line(to: NSPoint(x: iconCenterX - 1, y: centerY - 4))
+            check.line(to: NSPoint(x: iconCenterX + 6, y: centerY + 5))
+            check.lineWidth = 2.5
+            check.lineCapStyle = .round
+            check.lineJoinStyle = .round
+            NSColor.white.setStroke()
+            check.stroke()
+        } else {
+            // Double chevron (») — skip
+            let strokeColor = NSColor(white: 0.55, alpha: 1)
+            strokeColor.setStroke()
+            let chevronH: CGFloat = 5
+            for offset: CGFloat in [-3, 3] {
+                let chev = NSBezierPath()
+                chev.move(to: NSPoint(x: iconCenterX + offset - 3, y: centerY + chevronH))
+                chev.line(to: NSPoint(x: iconCenterX + offset + 2, y: centerY))
+                chev.line(to: NSPoint(x: iconCenterX + offset - 3, y: centerY - chevronH))
+                chev.lineWidth = 2
+                chev.lineCapStyle = .round
+                chev.lineJoinStyle = .round
+                chev.stroke()
+            }
+        }
+
+        // Draw word text
         let textRect = NSRect(
-            x: pillRect.origin.x + (pillRect.width - textSize.width) / 2,
+            x: contentX + iconWidth + iconGap,
             y: pillRect.origin.y + (pillRect.height - textSize.height) / 2 - 1,
             width: textSize.width,
             height: textSize.height

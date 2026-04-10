@@ -102,7 +102,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let result = WordPageCreator.createPage(lemma: captured.lemma, sourceApp: sourceApp)
         switch result {
         case .created(let path):
-            showBubble(for: captured.word)
+            showBubble(for: captured.word, status: .success)
             SightingsFile.recordSighting(
                 word: captured.lemma,
                 sentence: "",
@@ -115,7 +115,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 DictionaryService.shared.startLookup(word: captured.lemma, at: path)
             }
         case .skipped:
-            break // already exists, silent
+            showBubble(for: captured.word, status: .captured)
         case .error(let message):
             // Check if vault is missing
             let settings = AppSettings.shared
@@ -127,9 +127,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showBubble(for word: String) {
+    private func showBubble(for word: String, status: BubbleStatus = .success) {
         let mousePos = NSEvent.mouseLocation
-        let bubble = BubbleWindow(word: word, near: mousePos)
+        let bubble = BubbleWindow(word: word, near: mousePos, status: status)
         activeBubbles.append(bubble)
         bubble.showAndAnimate()
 

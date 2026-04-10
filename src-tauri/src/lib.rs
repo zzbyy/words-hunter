@@ -159,6 +159,11 @@ async fn capture_and_process_word(app: AppHandle) {
     // Check deduplication
     if vault::word_exists(&vault_path, &word) {
         info!("Word already exists in vault, skipping: {}", word);
+        if bubble_enabled {
+            if let Err(e) = bubble::show_bubble_captured(&app, &word) {
+                warn!("Failed to show captured bubble: {}", e);
+            }
+        }
         return;
     }
 
