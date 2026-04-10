@@ -12,7 +12,7 @@
     .bubble {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       padding: 10px 18px;
@@ -31,19 +31,24 @@
       transform: scale(1) translateY(0);
     }
     .bubble .icon {
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       flex-shrink: 0;
     }
-    .bubble .checkmark {
+    .bubble .icon-captured {
       display: none;
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
     }
-    .bubble.success .checkmark {
-      display: block;
+    /* Captured: grey pill, grey text, swap icon */
+    .bubble.captured {
+      background: linear-gradient(135deg, #6b6b6b 0%, #4a4a4a 100%);
+      box-shadow: 0 4px 24px rgba(100, 100, 100, 0.3), 0 0 0 1px rgba(255,255,255,0.05);
+      color: rgba(255,255,255,0.55);
     }
-    .bubble.success .word {
-      display: none;
-    }
+    .bubble.captured .icon { display: none; }
+    .bubble.captured .icon-captured { display: block; }
     .bubble.fade-out {
       opacity: 0;
       transform: scale(0.9) translateY(-5px);
@@ -53,12 +58,14 @@
 </head>
 <body>
   <div class="bubble" id="bubble">
+    <!-- Success: checkmark -->
     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M20 6L9 17l-5-5"/>
     </svg>
-    <svg class="checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
-      <path d="M8 12l3 3 5-5"/>
+    <!-- Captured: double chevron (skip) -->
+    <svg class="icon-captured" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 17l5-5-5-5"/>
+      <path d="M13 17l5-5-5-5"/>
     </svg>
     <span class="word" id="word"></span>
   </div>
@@ -66,32 +73,30 @@
     const { listen } = window.__TAURI__.event;
     let dismissTimer;
 
+    function dismiss(bubble, delay) {
+      clearTimeout(dismissTimer);
+      dismissTimer = setTimeout(() => {
+        bubble.classList.add('fade-out');
+        setTimeout(() => bubble.className = 'bubble', 350);
+      }, delay);
+    }
+
     listen('show-bubble', (event) => {
       const word = event.payload;
       const bubble = document.getElementById('bubble');
       const wordEl = document.getElementById('word');
       wordEl.textContent = word;
       bubble.className = 'bubble show';
-
-      clearTimeout(dismissTimer);
-      dismissTimer = setTimeout(() => {
-        bubble.classList.add('fade-out');
-        setTimeout(() => bubble.className = 'bubble', 350);
-      }, 1500);
+      dismiss(bubble, 1500);
     });
 
-    listen('show-bubble-success', (event) => {
+    listen('show-bubble-captured', (event) => {
       const word = event.payload;
       const bubble = document.getElementById('bubble');
       const wordEl = document.getElementById('word');
       wordEl.textContent = word;
-      bubble.className = 'bubble success show';
-
-      clearTimeout(dismissTimer);
-      dismissTimer = setTimeout(() => {
-        bubble.classList.add('fade-out');
-        setTimeout(() => bubble.className = 'bubble', 350);
-      }, 1500);
+      bubble.className = 'bubble captured show';
+      dismiss(bubble, 1500);
     });
   </script>
 </body>
