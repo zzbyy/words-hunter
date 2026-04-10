@@ -132,6 +132,12 @@ final class TextCaptureLemmatizeTests: XCTestCase {
         let result = TextCapture.lemmatize("definitions")
         XCTAssertEqual(result, "definition")
     }
+
+    func testLemmatize_states_returnsSingular() {
+        // Regression: ensure plural "states" singularizes to "state" in the bubble
+        let result = TextCapture.lemmatize("states")
+        XCTAssertEqual(result, "state")
+    }
 }
 
 // MARK: - DictionaryService MW JSON Parsing Tests (kept for fallback)
