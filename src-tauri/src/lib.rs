@@ -192,7 +192,7 @@ async fn capture_and_process_word(app: AppHandle) {
 
     // Show bubble
     if bubble_enabled {
-        if let Err(e) = bubble::show_bubble(&app, &word) {
+        if let Err(e) = bubble::show_bubble(&app, &lemma) {
             warn!("Failed to show bubble: {}", e);
         }
     }
