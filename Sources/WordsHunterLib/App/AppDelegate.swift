@@ -102,7 +102,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let result = WordPageCreator.createPage(lemma: captured.lemma, sourceApp: sourceApp)
         switch result {
         case .created(let path):
-            showBubble(for: captured.word, status: .success)
+            showBubble(for: captured.lemma, status: .success)
             SightingsFile.recordSighting(
                 word: captured.lemma,
                 sentence: "",
