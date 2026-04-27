@@ -9,12 +9,14 @@ swift build -c release
 
 APP_DIR="dist/Words Hunter.app/Contents"
 MACOS_DIR="$APP_DIR/MacOS"
+RES_DIR="$APP_DIR/Resources"
 
 echo "Creating .app bundle..."
 rm -rf "dist/Words Hunter.app"
-mkdir -p "$MACOS_DIR"
+mkdir -p "$MACOS_DIR" "$RES_DIR"
 
 cp ".build/release/WordsHunter" "$MACOS_DIR/Words Hunter"
+cp "src-tauri/icons/icon.icns" "$RES_DIR/AppIcon.icns"
 
 cat > "$APP_DIR/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -35,6 +37,8 @@ cat > "$APP_DIR/Info.plist" << PLIST
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>Words Hunter</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>

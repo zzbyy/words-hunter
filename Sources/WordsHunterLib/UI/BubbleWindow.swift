@@ -17,8 +17,8 @@ final class BubbleWindow: NSPanel {
 
         let hPad: CGFloat = 20
         let vPad: CGFloat = 10
-        let iconWidth: CGFloat = 16
-        let iconGap: CGFloat = 6
+        let iconWidth: CGFloat = 18
+        let iconGap: CGFloat = 8
         let bubbleW = hPad + iconWidth + iconGap + textSize.width + hPad
         let bubbleH = textSize.height + vPad * 2
 
@@ -142,8 +142,8 @@ private final class BubbleView: NSView {
     private let bubbleSize: CGSize
     private let status: BubbleStatus
 
-    private let iconWidth: CGFloat = 16
-    private let iconGap: CGFloat = 6
+    private let iconWidth: CGFloat = 18
+    private let iconGap: CGFloat = 8
 
     init(frame: NSRect, bubbleSize: CGSize, word: String, status: BubbleStatus) {
         self.word = word
@@ -238,16 +238,9 @@ private final class BubbleView: NSView {
         // Draw indicator icon
         let iconCenterX = contentX + iconWidth / 2
         if status == .success {
-            // Checkmark (✓)
-            let check = NSBezierPath()
-            check.move(to: NSPoint(x: iconCenterX - 5, y: centerY + 1))
-            check.line(to: NSPoint(x: iconCenterX - 1, y: centerY - 4))
-            check.line(to: NSPoint(x: iconCenterX + 6, y: centerY + 5))
-            check.lineWidth = 2.5
-            check.lineCapStyle = .round
-            check.lineJoinStyle = .round
-            NSColor.white.setStroke()
-            check.stroke()
+            // Brand mark — same aperture used in the menu bar, in white.
+            MenuBarIcon.draw(centeredAt: NSPoint(x: iconCenterX, y: centerY),
+                             size: 18, color: .white)
         } else {
             // Double chevron (») — skip
             let strokeColor = NSColor(white: 0.55, alpha: 1)

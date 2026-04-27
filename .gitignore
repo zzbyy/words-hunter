@@ -5,3 +5,14 @@ dist/
 *.d
 .claude/
 .gstack/
+
+# Node / Tauri tooling
+node_modules/
+
+# Tauri-generated icons we don't ship today. Regeneratable from
+# src-tauri/icons/source/icon.svg via `pnpm tauri icon src-tauri/icons/source/icon.svg`.
+src-tauri/icons/64x64.png
+src-tauri/icons/Square*.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/android/
+src-tauri/icons/ios/
