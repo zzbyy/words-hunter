@@ -9,7 +9,7 @@ final class StatusBarController {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.title = "🎯"
+            button.image = MenuBarIcon.template()
             button.toolTip = "Words Hunter"
         }
 
